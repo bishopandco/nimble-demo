@@ -1,9 +1,9 @@
-.PHONY: dev run test check build frontend frontend-test frontend-build
+.PHONY: dev dev-build run test check build sidecar frontend frontend-test frontend-build
 
-dev:
+dev: sidecar
 	go run github.com/air-verse/air@v1.62.0 -c .air.toml
 
-run:
+run: sidecar
 	go run ./cmd/api
 
 test:
@@ -13,7 +13,13 @@ check:
 	go vet ./...
 	@test -z "$$(gofmt -l cmd internal)"
 
-build:
+sidecar:
+	go build -o bin/bot-sidecar ./cmd/bot-sidecar
+
+dev-build: sidecar
+	go build -o ./.air/api ./cmd/api
+
+build: sidecar
 	go build -o bin/api ./cmd/api
 
 frontend:

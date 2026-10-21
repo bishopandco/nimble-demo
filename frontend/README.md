@@ -1,15 +1,35 @@
-# The common room
+# Common room
 
-A small Svelte 5 + Vite chatroom using the blog API's `/ws` endpoint. All connections
+A small Svelte 5 + Vite chatroom using the chat server's `/ws` endpoint. All connections
 share one conversation. Messages are broadcast to everyone, including the sender.
 The server shares its latest 100 messages when a new client connects.
+
+## Layout and typography
+
+The layout uses a 12-column grid with 24px gutters and an 8px spacing rhythm.
+Below 700px, it stacks onto four columns. Headings use the system Helvetica
+grotesk stack; body text and controls use the system monospace stack.
+Six type styles are defined in `src/style.css`:
+
+| Style | Size / leading | Weight |
+| --- | --- | --- |
+| Display | 64 / 72px | 500 |
+| Heading | 32 / 40px | 500 |
+| Section | 20 / 24px | 500 |
+| Body | 14 / 24px | 400 |
+| Detail | 12 / 16px | 400 |
+| Emphasis | 14 / 24px | 600 |
+
+Interface copy stays within ten words per line. `MeasuredText.svelte` adds
+presentation breaks every ten words in messages, names, and errors. It preserves
+the original text, whitespace, and explicit newlines without changing socket data.
 
 ## Development
 
 Use Node 24, or a version matching `package.json`'s engines field.
 If you use nvm, run `nvm use` in this directory first; `.nvmrc` selects Node 24.
 
-Start the API from the repository root:
+Start the server from the repository root:
 
 ```sh
 make dev
@@ -27,24 +47,31 @@ leave it blank to use a generated guest name. Type a message and click **Send**.
 The same message appears in both tabs. Enter sends; Shift+Enter adds a new line.
 Messages allow up to 500 Unicode characters; names allow up to 40.
 
-`make dev` rebuilds and restarts the API when Go source or embedded SQL changes.
-The frontend reconnects after each restart. Chat history resets on restart;
-SQLite blog data persists. Vite handles frontend changes separately.
+Use `/bot <prompt>`, `/bot codex <prompt>`, or `/bot claude <prompt>` to ask the
+host CLI. A working indicator appears while requests are pending. Bot replies
+are labeled `bot`, broadcast to the room, and saved alongside their prompt IDs.
+Long replies appear as several messages. Provider errors appear only to the sender.
+See the root README for CLI installation, login, and sidecar configuration.
+
+`make dev` rebuilds and restarts the server when Go source changes.
+The frontend reconnects after each restart. SQLite preserves chat history.
+Vite handles frontend changes separately.
 
 **Disconnect** pauses the connection and automatic retries. **Connect to room**
 resumes it. Dropped connections retry with a delay from one to ten seconds.
 On reconnect or reload, the app replaces its local conversation with the server's
-history snapshot. Chat history is in memory, shared by this API process, and resets
-when the API restarts. It is not saved in SQLite. Display names are not logins.
+latest 100-message history snapshot. The server stores chat messages in SQLite
+before broadcasting them. History survives restarts when using the same database.
+Each reconnect gets a new connection identity. Display names are not logins.
 
-Only chat messages appear in the conversation. REST change events and heartbeat
-responses still use the same socket. Server validation errors appear by the composer.
+Only chat messages appear in the conversation. Heartbeat responses use the same
+socket. Server validation errors appear by the composer.
 
 The browser connects to `/ws` on the frontend's origin. Vite proxies it to
-`http://127.0.0.1:8080` and preserves Host and Origin, so the API's existing origin
-check stays in effect. The Go API does not need CORS or origin-policy changes.
+`http://127.0.0.1:8080` and preserves Host and Origin, so the server's existing origin
+check stays in effect. The Go server does not need CORS or origin-policy changes.
 
-For a different API address, set `API_TARGET`:
+For a different server address, set `API_TARGET`:
 
 ```sh
 API_TARGET=http://127.0.0.1:9000 npm run dev
@@ -64,5 +91,5 @@ Tests cover shared history, server echoes, message composition, Unicode limits,
 keyboard behavior, reconnect delays, manual disconnection, stale callbacks,
 message retention, safe text rendering, and lifecycle cleanup.
 `npm run build` produces `dist/`. Preview runs on `http://127.0.0.1:4173` and uses
-the same WebSocket proxy. A static deployment must route `/ws` to the Go API on
+the same WebSocket proxy. A static deployment must route `/ws` to the Go server on
 the same public origin and support WebSocket upgrades.

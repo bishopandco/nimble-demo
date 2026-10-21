@@ -3,11 +3,10 @@ package store
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"strings"
-	"sync"
 	"testing"
 
 	"go-api/internal/model"
@@ -19,216 +18,162 @@ func openTestStore(t *testing.T, path string) *Store {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := db.Close(); err != nil {
-			t.Error(err)
-		}
-	})
+	t.Cleanup(func() { db.Close() })
 	return db
 }
 
-func TestPersistenceAndMigration(t *testing.T) {
+func TestMessagesPersistAndHistoryIsBounded(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	// These characters must be treated as filename characters, not DSN parameters.
-	path := filepath.Join(t.TempDir(), "blog ?#.db")
-	first, err := Open(ctx, path)
+	path := filepath.Join(t.TempDir(), "nested", "chat.db")
+	db := openTestStore(t, path)
+	connection, err := db.CreateConnection(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = first.Close() })
-	u, err := first.CreateUser(ctx, model.UserInput{Name: "Ada", Email: "ada@example.com"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	tag, err := first.CreateTag(ctx, model.TagInput{Name: "Go"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	blog, err := first.CreateBlog(ctx, model.BlogInput{Title: "Post", Body: "Text", AuthorID: u.ID, TagIDs: []int64{tag.ID}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	comment, err := first.CreateComment(ctx, model.CommentInput{BlogID: blog.ID, AuthorID: u.ID, Body: "Hello"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := first.Close(); err != nil {
-		t.Fatal(err)
-	}
-	second := openTestStore(t, path)
-	gotUser, err := second.GetUser(ctx, u.ID)
-	if err != nil || gotUser != u {
-		t.Fatalf("user did not persist: %+v, %v", gotUser, err)
-	}
-	gotBlog, err := second.GetBlog(ctx, blog.ID)
-	if err != nil || gotBlog.Title != blog.Title || len(gotBlog.Tags) != 1 || gotBlog.Tags[0] != tag {
-		t.Fatalf("blog did not persist: %+v, %v", gotBlog, err)
-	}
-	gotComment, err := second.GetComment(ctx, comment.ID)
-	if err != nil || gotComment != comment {
-		t.Fatalf("comment did not persist: %+v, %v", gotComment, err)
-	}
-	var version, foreignKeys int
-	if err := second.db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
-		t.Fatal(err)
-	}
-	if err := second.db.QueryRow("PRAGMA foreign_keys").Scan(&foreignKeys); err != nil {
-		t.Fatal(err)
-	}
-	if version != 1 || foreignKeys != 1 {
-		t.Fatalf("version=%d, foreign_keys=%d", version, foreignKeys)
-	}
-	var integrity string
-	if err := second.db.QueryRow("PRAGMA integrity_check").Scan(&integrity); err != nil || integrity != "ok" {
-		t.Fatalf("integrity=%q, error=%v", integrity, err)
-	}
-}
-
-func TestRejectFutureSchema(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join(t.TempDir(), "future.db")
-	raw, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer raw.Close()
-	if _, err := raw.Exec("PRAGMA user_version = 2"); err != nil {
-		t.Fatal(err)
-	}
-	_, err = Open(context.Background(), path)
-	if err == nil || !strings.Contains(err.Error(), "unsupported schema version 2") {
-		t.Fatalf("unexpected migration error: %v", err)
-	}
-	var version int
-	if err := raw.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
-		t.Fatal(err)
-	}
-	if version != 2 {
-		t.Fatal("future schema was modified")
-	}
-}
-
-func TestMigrationRollback(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join(t.TempDir(), "conflict.db")
-	raw, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer raw.Close()
-	// Force the migration to fail after it has created other tables.
-	if _, err := raw.Exec("CREATE TABLE tags (existing TEXT)"); err != nil {
-		t.Fatal(err)
-	}
-	if db, err := Open(context.Background(), path); err == nil {
-		db.Close()
-		t.Fatal("expected migration failure")
-	}
-	var count, version int
-	if err := raw.QueryRow("SELECT count(*) FROM sqlite_master WHERE name IN ('users', 'blogs', 'comments')").Scan(&count); err != nil {
-		t.Fatal(err)
-	}
-	if err := raw.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 || version != 0 {
-		t.Fatalf("partial migration persisted: tables=%d version=%d", count, version)
-	}
-}
-
-func TestForeignKeysSurviveConnectionReplacement(t *testing.T) {
-	t.Parallel()
-	db := openTestStore(t, filepath.Join(t.TempDir(), "replace.db"))
-	db.db.SetMaxIdleConns(0)
-	for range 3 {
-		_, err := db.CreateBlog(context.Background(), model.BlogInput{Title: "Post", Body: "Text", AuthorID: 9999})
-		if !errors.Is(err, ErrConflict) {
-			t.Fatalf("foreign key not enforced: %v", err)
+	var sent []model.ChatMessage
+	for i := 1; i <= 105; i++ {
+		message, err := db.CreateMessage(ctx, connection.ID, "Ada", fmt.Sprintf("Message %d\n  second line", i))
+		if err != nil {
+			t.Fatal(err)
 		}
+		if message.ID != int64(i) || message.Timestamp.IsZero() {
+			t.Fatalf("invalid record: %+v", message)
+		}
+		sent = append(sent, message)
+	}
+	unused, err := db.CreateConnection(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened := openTestStore(t, path)
+	history, err := reopened.RecentMessages(ctx, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(history, sent[5:]) {
+		t.Fatal("history changed after database reopen")
+	}
+	all, err := reopened.RecentMessages(ctx, 1000)
+	if err != nil || !reflect.DeepEqual(all, sent) {
+		t.Fatalf("older messages were not retained: %v", err)
+	}
+	identity, err := reopened.CreateConnection(ctx)
+	if err != nil || identity.ID <= unused.ID {
+		t.Fatalf("connection identity reused: %+v, %v", identity, err)
+	}
+	next, err := reopened.CreateMessage(ctx, identity.ID, "Grace", "After restart")
+	if err != nil || next.ID != 106 {
+		t.Fatalf("message ID did not continue: %+v, %v", next, err)
 	}
 }
 
-func TestCommentAuthorDeletionRestricted(t *testing.T) {
+func TestMessageConstraintsAndUnicode(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	db := openTestStore(t, ":memory:")
-	author, err := db.CreateUser(ctx, model.UserInput{Name: "Author", Email: "author@example.com"})
+	connection, err := db.CreateConnection(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	reader, err := db.CreateUser(ctx, model.UserInput{Name: "Reader", Email: "reader@example.com"})
+	for _, tc := range []struct {
+		name, text string
+		clientID   uint64
+	}{
+		{"", "hello", connection.ID},
+		{strings.Repeat("a", 41), "hello", connection.ID},
+		{"Ada", "", connection.ID},
+		{"Ada", strings.Repeat("a", 501), connection.ID},
+		{"Ada", "hello", connection.ID + 100},
+	} {
+		if _, err := db.CreateMessage(ctx, tc.clientID, tc.name, tc.text); err == nil {
+			t.Fatalf("invalid record accepted: %+v", tc)
+		}
+	}
+	if messages, err := db.RecentMessages(ctx, 100); err != nil || len(messages) != 0 {
+		t.Fatalf("failed write persisted: %+v, %v", messages, err)
+	}
+	message, err := db.CreateMessage(ctx, connection.ID, strings.Repeat("界", 40), strings.Repeat("🌍", 500))
 	if err != nil {
 		t.Fatal(err)
 	}
-	blog, err := db.CreateBlog(ctx, model.BlogInput{Title: "Post", Body: "Text", AuthorID: author.ID})
-	if err != nil {
-		t.Fatal(err)
+	history, err := db.RecentMessages(ctx, 100)
+	if err != nil || !reflect.DeepEqual(history, []model.ChatMessage{message}) {
+		t.Fatalf("Unicode message changed: %v", err)
 	}
-	comment, err := db.CreateComment(ctx, model.CommentInput{BlogID: blog.ID, AuthorID: reader.ID, Body: "Hello"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.DeleteUser(ctx, reader.ID); !errors.Is(err, ErrConflict) {
-		t.Fatalf("comment author deleted: %v", err)
-	}
-	if err := db.DeleteComment(ctx, comment.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := db.DeleteUser(ctx, reader.ID); err != nil {
-		t.Fatal(err)
+	if _, err := db.RecentMessages(ctx, 0); err == nil {
+		t.Fatal("invalid history limit accepted")
 	}
 }
 
-func TestConcurrentBlogWrites(t *testing.T) {
+func TestSchemaPreservesUnrelatedData(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
-	db := openTestStore(t, filepath.Join(t.TempDir(), "concurrent.db"))
-	u, err := db.CreateUser(ctx, model.UserInput{Name: "Ada", Email: "ada@example.com"})
+	path := filepath.Join(t.TempDir(), "chat.db")
+	legacy, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tag, err := db.CreateTag(ctx, model.TagInput{Name: "Go"})
-	if err != nil {
+	if _, err := legacy.Exec("CREATE TABLE settings (value TEXT); INSERT INTO settings VALUES ('keep'); PRAGMA user_version=1"); err != nil {
 		t.Fatal(err)
 	}
-	const count = 12
-	results := make(chan error, count)
-	var wg sync.WaitGroup
-	for i := range count {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			_, err := db.CreateBlog(ctx, model.BlogInput{Title: fmt.Sprintf("Post %d", i), Body: "Text", AuthorID: u.ID, TagIDs: []int64{tag.ID}})
-			results <- err
-		}(i)
-	}
-	wg.Wait()
-	close(results)
-	for err := range results {
-		if err != nil {
-			t.Error(err)
-		}
-	}
-	blogs, err := db.ListBlogs(ctx, ListOptions{Limit: 100})
-	if err != nil {
+	if err := legacy.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if len(blogs) != count {
-		t.Fatalf("got %d blogs, want %d", len(blogs), count)
+	db := openTestStore(t, path)
+	var value string
+	if err := db.db.QueryRow("SELECT value FROM settings").Scan(&value); err != nil || value != "keep" {
+		t.Fatalf("unrelated data changed: %q, %v", value, err)
 	}
-	for _, blog := range blogs {
-		if len(blog.Tags) != 1 || blog.Tags[0].ID != tag.ID {
-			t.Fatalf("missing tag after concurrent write: %+v", blog)
-		}
+	if _, err := db.CreateConnection(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 
-func TestCanceledOpen(t *testing.T) {
+func TestOpenFailure(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := Open(ctx, ":memory:")
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("expected context cancellation, got %v", err)
+	if db, err := Open(ctx, ":memory:"); err == nil {
+		db.Close()
+		t.Fatal("canceled open succeeded")
+	}
+	if db, err := Open(context.Background(), t.TempDir()); err == nil {
+		db.Close()
+		t.Fatal("opened a directory as a database")
+	}
+}
+
+func TestBotRepliesAreAtomicAndKeepPromptMetadata(t *testing.T) {
+	db := openTestStore(t, ":memory:")
+	ctx := context.Background()
+	identity, err := db.CreateConnection(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := db.CreateMessage(ctx, identity.ID, "Ada", "/bot Hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, chunks := range [][]string{{"First chunk", strings.Repeat("x", 501)}, {"First chunk", ""}} {
+		if _, err := db.CreateBotReply(ctx, identity.ID, "codex", prompt.ID, chunks); err == nil {
+			t.Fatal("invalid reply committed")
+		}
+		if messages, err := db.RecentMessages(ctx, 100); err != nil || len(messages) != 1 {
+			t.Fatalf("partial reply persisted: %+v, %v", messages, err)
+		}
+	}
+	if _, err := db.CreateBotReply(ctx, identity.ID, "unknown", prompt.ID, []string{"reply"}); err == nil {
+		t.Fatal("unknown provider committed")
+	}
+	messages, err := db.CreateBotReply(ctx, identity.ID, "claude", prompt.ID, []string{"First", "Second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	history, err := db.RecentMessages(ctx, 100)
+	if err != nil || len(history) != 3 || !reflect.DeepEqual(history[1:], messages) || history[1].ReplyTo != prompt.ID || history[1].Provider != "claude" {
+		t.Fatalf("metadata lost: %+v, %v", history, err)
 	}
 }

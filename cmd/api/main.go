@@ -7,11 +7,11 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"syscall"
 	"time"
 
 	"go-api/internal/api"
+	"go-api/internal/bot"
 	"go-api/internal/store"
 )
 
@@ -25,18 +25,28 @@ func main() {
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	path := env("DB_PATH", "data/blog.db")
-	if path != ":memory:" {
-		if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-			return err
-		}
-	}
+	path := env("DB_PATH", "data/chat.db")
 	db, err := store.Open(ctx, path)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
-	handler := api.New(db, slog.Default())
+	timeout, err := time.ParseDuration(env("BOT_TIMEOUT", "2m"))
+	if err != nil || timeout <= 0 {
+		return errors.New("BOT_TIMEOUT must be a positive duration")
+	}
+	provider := env("BOT_PROVIDER", "auto")
+	if provider != "auto" && provider != "codex" && provider != "claude" {
+		return errors.New("BOT_PROVIDER must be auto, codex, or claude")
+	}
+	var options []api.Option
+	if env("BOT_ENABLED", "true") != "false" {
+		options = append(options, api.WithBot(bot.Client{Path: env("BOT_SIDECAR_PATH", "bin/bot-sidecar"), Provider: provider}, timeout))
+	}
+	handler, err := api.New(ctx, db, slog.Default(), options...)
+	if err != nil {
+		return err
+	}
 	defer handler.Close()
 	server := &http.Server{
 		Addr: env("ADDR", "127.0.0.1:8080"), Handler: handler,
@@ -47,7 +57,7 @@ func run() error {
 	}
 	done := make(chan error, 1)
 	go func() { done <- server.ListenAndServe() }()
-	slog.Info("starting blog API", "address", server.Addr, "database", path)
+	slog.Info("starting chat server", "address", server.Addr, "database", path)
 	select {
 	case err := <-done:
 		if errors.Is(err, http.ErrServerClosed) {

@@ -2,7 +2,7 @@ root = "."
 tmp_dir = ".air"
 
 [build]
-cmd = "go build -o ./.air/api ./cmd/api"
+cmd = "make dev-build"
 bin = ".air/api"
 include_ext = ["go", "sql", "mod", "sum"]
 exclude_dir = [".air", ".git", ".idea", "bin", "data", "frontend", "vendor"]

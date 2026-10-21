@@ -1,14 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/gorilla/websocket"
 
 	"go-api/internal/api"
+	"go-api/internal/store"
 )
 
 // Run the real entry point in a subprocess to test signal handling without
@@ -34,8 +34,9 @@ func TestServerWebSocketLifecycle(t *testing.T) {
 	}
 	address := listener.Addr().String()
 	listener.Close()
+	path := filepath.Join(t.TempDir(), "chat.db")
 	process := exec.Command(os.Args[0], "-test.run=^TestServerWebSocketLifecycle$")
-	process.Env = append(os.Environ(), "GO_API_TEST_SERVER=1", "ADDR="+address, "DB_PATH="+filepath.Join(t.TempDir(), "blog.db"))
+	process.Env = append(os.Environ(), "GO_API_TEST_SERVER=1", "ADDR="+address, "DB_PATH="+path)
 	process.Stderr = os.Stderr
 	if err := process.Start(); err != nil {
 		t.Fatal(err)
@@ -91,17 +92,11 @@ func TestServerWebSocketLifecycle(t *testing.T) {
 	if err := conn.ReadJSON(&message); err != nil || message.Type != "pong" {
 		t.Fatalf("pong: %+v, %v", message, err)
 	}
-	response, err := httpClient.Post(base+"/tags", "application/json", strings.NewReader(`{"name":"Go"}`))
-	if err != nil {
+	if err := conn.WriteJSON(map[string]string{"type": "chat", "name": "Ada", "message": "Hello everyone"}); err != nil {
 		t.Fatal(err)
 	}
-	body, err := io.ReadAll(response.Body)
-	response.Body.Close()
-	if err != nil || response.StatusCode != 201 {
-		t.Fatalf("create tag: %s, %v", body, err)
-	}
-	if err := conn.ReadJSON(&message); err != nil || message.Type != "created" || message.Resource != "tags" || message.ID != 1 {
-		t.Fatalf("change event: %+v, %v", message, err)
+	if err := conn.ReadJSON(&message); err != nil || message.Type != "chat" || message.Name != "Ada" || message.Message != "Hello everyone" || message.ID != 1 {
+		t.Fatalf("chat echo: %+v, %v", message, err)
 	}
 	if err := process.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
@@ -118,5 +113,14 @@ func TestServerWebSocketLifecycle(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("server did not shut down")
+	}
+	db, err := store.Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	saved, err := db.RecentMessages(context.Background(), 100)
+	if err != nil || len(saved) != 1 || saved[0].Message != "Hello everyone" {
+		t.Fatalf("subprocess did not persist chat: %+v, %v", saved, err)
 	}
 }

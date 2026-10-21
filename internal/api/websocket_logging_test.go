@@ -16,7 +16,6 @@ import (
 	"github.com/gorilla/websocket"
 
 	"go-api/internal/api"
-	"go-api/internal/store"
 )
 
 // The HTTP handler and socket writer can log concurrently.
@@ -39,13 +38,11 @@ func (b *socketLogBuffer) snapshot() string {
 
 func TestWebSocketLogging(t *testing.T) {
 	t.Parallel()
-	db, err := store.Open(context.Background(), ":memory:")
+	var output socketLogBuffer
+	handler, err := api.New(context.Background(), testStore(t), slog.New(slog.NewJSONHandler(&output, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer db.Close()
-	var output socketLogBuffer
-	handler := api.New(db, slog.New(slog.NewJSONHandler(&output, nil)))
 	server := httptest.NewServer(handler)
 	defer server.Close()
 	defer handler.Close()

@@ -3,11 +3,9 @@ package api_test
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -60,69 +58,6 @@ func receiveSocket(t *testing.T, conn *websocket.Conn) api.SocketMessage {
 	return message
 }
 
-func TestWebSocketBroadcastsAllResources(t *testing.T) {
-	t.Parallel()
-	c, server, _ := socketServer(t)
-	connections := []*websocket.Conn{connectSocket(t, server, nil), connectSocket(t, server, nil)}
-	operations := []struct {
-		method, path, body, action, resource string
-		status                               int
-	}{
-		{"POST", "/users", `{"name":"Ada","email":"ada@example.com"}`, "created", "users", 201},
-		{"POST", "/tags", `{"name":"Go"}`, "created", "tags", 201},
-		{"POST", "/blogs", `{"title":"First","body":"Hello","author_id":1,"tag_ids":[1]}`, "created", "blogs", 201},
-		{"POST", "/comments", `{"blog_id":1,"author_id":1,"body":"Nice post"}`, "created", "comments", 201},
-		{"PUT", "/users/1", `{"name":"Ada Updated","email":"ada@example.com"}`, "updated", "users", 200},
-		{"PUT", "/tags/1", `{"name":"Golang"}`, "updated", "tags", 200},
-		{"PUT", "/blogs/1", `{"title":"Updated","body":"Hello","author_id":1,"tag_ids":[1]}`, "updated", "blogs", 200},
-		{"PUT", "/comments/1", `{"blog_id":1,"author_id":1,"body":"Updated"}`, "updated", "comments", 200},
-		{"DELETE", "/comments/1", "", "deleted", "comments", 204},
-		{"DELETE", "/blogs/1", "", "deleted", "blogs", 204},
-		{"DELETE", "/tags/1", "", "deleted", "tags", 204},
-		{"DELETE", "/users/1", "", "deleted", "users", 204},
-	}
-	for _, op := range operations {
-		t.Run(op.method+" "+op.path, func(t *testing.T) {
-			c.request(op.method, op.path, op.body, op.status)
-			var first api.SocketMessage
-			for index, conn := range connections {
-				message := receiveSocket(t, conn)
-				if message.Type != op.action || message.Resource != op.resource || message.ID != 1 || message.Message != "" {
-					t.Fatalf("unexpected change event: %+v", message)
-				}
-				if index == 0 {
-					first = message
-				} else if !reflect.DeepEqual(message, first) {
-					t.Fatal("clients received different events")
-				}
-			}
-		})
-	}
-}
-
-func TestWebSocketDoesNotPublishFailedWritesOrReads(t *testing.T) {
-	t.Parallel()
-	c, server, _ := socketServer(t)
-	c.seed()
-	conn := connectSocket(t, server, nil)
-	c.request("POST", "/users", `{"name":"Other","email":"ada@example.com"}`, 409)
-	c.request("POST", "/tags", `{"name":"Go"}`, 409)
-	c.request("POST", "/tags", `{"name":""}`, 400)
-	c.request("POST", "/blogs", `{"title":"Invalid","body":"Text","author_id":1,"tag_ids":[1,9999]}`, 409)
-	c.request("PUT", "/blogs/1", `{"title":"Invalid","body":"Text","author_id":1,"tag_ids":[1,9999]}`, 409)
-	c.request("DELETE", "/users/1", "", 409)
-	c.request("DELETE", "/tags/9999", "", 404)
-	c.request("GET", "/blogs/1", "", 200)
-	c.request("GET", "/tags", "", 200)
-	// A pong acts as a queue barrier: any mistakenly published event precedes it.
-	if err := conn.WriteJSON(map[string]string{"type": "ping"}); err != nil {
-		t.Fatal(err)
-	}
-	if message := receiveSocket(t, conn); message.Type != "pong" {
-		t.Fatalf("unexpected event after failed write/read: %+v", message)
-	}
-}
-
 func TestWebSocketJSONMessages(t *testing.T) {
 	t.Parallel()
 	_, server, _ := socketServer(t)
@@ -140,7 +75,7 @@ func TestWebSocketJSONMessages(t *testing.T) {
 		if err := connection.WriteJSON(map[string]string{"type": "ping"}); err != nil {
 			t.Fatal(err)
 		}
-		if message := receiveSocket(t, connection); message.Type != "pong" || message.Resource != "" || message.ID != 0 {
+		if message := receiveSocket(t, connection); message.Type != "pong" || message.ID != 0 {
 			t.Fatalf("unexpected pong: %+v", message)
 		}
 	}
@@ -210,38 +145,4 @@ func TestWebSocketShutdown(t *testing.T) {
 	}
 	handler.Close()
 	c.request("GET", "/ws", "", 503)
-}
-
-func TestWebSocketConcurrentWrites(t *testing.T) {
-	t.Parallel()
-	_, server, _ := socketServer(t)
-	conn := connectSocket(t, server, nil)
-	const count = 12
-	results := make(chan error, count)
-	for i := range count {
-		go func() {
-			body := fmt.Sprintf(`{"name":"tag-%d"}`, i)
-			response, err := server.Client().Post(server.URL+"/tags", "application/json", strings.NewReader(body))
-			if err == nil {
-				response.Body.Close()
-				if response.StatusCode != 201 {
-					err = fmt.Errorf("write returned %d", response.StatusCode)
-				}
-			}
-			results <- err
-		}()
-	}
-	for range count {
-		if err := <-results; err != nil {
-			t.Fatal(err)
-		}
-	}
-	seen := make(map[int64]bool)
-	for range count {
-		message := receiveSocket(t, conn)
-		if message.Type != "created" || message.Resource != "tags" || message.ID <= 0 || seen[message.ID] {
-			t.Fatalf("unexpected concurrent event: %+v", message)
-		}
-		seen[message.ID] = true
-	}
 }

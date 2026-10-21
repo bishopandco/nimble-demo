@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"go-api/internal/store"
 )
 
 func TestSocketHubDropsFullQueue(t *testing.T) {
@@ -24,7 +26,15 @@ func TestSocketHubDropsFullQueue(t *testing.T) {
 		upgraded <- conn
 	}))
 	defer server.Close()
-	hub := newSocketHub(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	db, err := store.Open(context.Background(), ":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	hub, err := newSocketHub(context.Background(), db, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer hub.close()
 	newClient := func() *socketClient {
 		peer, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), nil)
@@ -33,16 +43,20 @@ func TestSocketHubDropsFullQueue(t *testing.T) {
 		}
 		t.Cleanup(func() { peer.Close() })
 		conn := <-upgraded
-		client := &socketClient{conn: conn, send: make(chan SocketMessage, 1), done: make(chan struct{})}
+		identity, err := db.CreateConnection(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		client := &socketClient{id: identity.ID, conn: conn, send: make(chan SocketMessage, 1), done: make(chan struct{})}
 		hub.clients[client] = struct{}{}
 		return client
 	}
 	slow, healthy := newClient(), newClient()
-	hub.publish("created", "tags", 1)
+	hub.chat(context.Background(), healthy, "Ada", "First message")
 	<-healthy.send
 	done := make(chan struct{})
 	go func() {
-		hub.publish("updated", "tags", 1)
+		hub.chat(context.Background(), healthy, "Ada", "Second message")
 		close(done)
 	}()
 	select {
@@ -58,7 +72,7 @@ func TestSocketHubDropsFullQueue(t *testing.T) {
 	default:
 		t.Fatal("slow client was not disconnected")
 	}
-	if message := <-healthy.send; message.Type != "updated" {
+	if message := <-healthy.send; message.Type != "chat" || message.ID != 2 || message.Message != "Second message" {
 		t.Fatalf("healthy client missed event: %+v", message)
 	}
 	hub.mu.Lock()

@@ -73,6 +73,27 @@ describe('shared chatroom', () => {
     expect(element('.you-label').textContent).toBe('you')
   })
 
+  it('sends bot commands and tracks queued requests without duplicating jobs', async () => {
+    await open()
+    await fireEvent.input(element('textarea'), { target: { value: '/bot claude Explain sockets' } })
+    await fireEvent.submit(element('form'))
+    expect(JSON.parse(socket().send.mock.calls[0][0]).message).toBe('/bot claude Explain sockets')
+    socket().receive({ type: 'bot_status', id: 1, state: 'queued' })
+    socket().receive({ type: 'bot_status', id: 1, state: 'running' })
+    socket().receive({ type: 'bot_status', id: 2, state: 'queued' })
+    await tick()
+    expect(element('.bot-activity').textContent).toContain('2 requests')
+    socket().receive(chat(3, { name: 'Claude', client_id: 8, provider: 'claude', reply_to: 1, message: '<b>Plain reply</b>' }))
+    socket().receive({ type: 'bot_status', id: 1, state: 'done' })
+    await tick()
+    expect(element('.message-bubble').textContent).toBe('<b>Plain reply</b>')
+    expect(element('.you-label').textContent).toBe('bot')
+    expect(element('.bot-activity').textContent).not.toContain('2 requests')
+    socket().receive({ type: 'bot_status', id: 2, state: 'failed' })
+    await tick()
+    expect(element('.bot-activity')).toBeNull()
+  })
+
   it('supports Enter to send, Shift+Enter for new lines, and IME composition', async () => {
     await open()
     const input = element('textarea')
@@ -133,7 +154,7 @@ describe('shared chatroom', () => {
     await open()
     socket().receive('not json')
     socket().receive('null')
-    socket().receive({ type: 'created', resource: 'blogs', id: 1 })
+    socket().receive({ type: 'unknown', message: 'Ignore this event' })
     socket().receive({ type: 'pong' })
     socket().receive(chat(1, { name: '<img src=x>', message: '<script>alert(1)</script>' }))
     await tick()
@@ -152,6 +173,20 @@ describe('shared chatroom', () => {
     expect(messages).toHaveLength(100)
     expect(messages[0].textContent).toBe('Hello 6')
     expect(messages[99].textContent).toBe('Hello 105')
+  })
+
+  it('limits displayed lines to ten words without changing message whitespace', async () => {
+    await open()
+    const message = 'one two three four five six seven eight nine ten eleven twelve\nshort line\n  one two three four five six seven eight nine ten eleven'
+    socket().receive(chat(1, { message }))
+    await tick()
+    const bubble = element('.message-bubble')
+    expect(bubble.textContent).toBe(message)
+    expect(bubble.querySelectorAll('br')).toHaveLength(2)
+    const displayed = Array.from(bubble.childNodes)
+      .map((node) => node.nodeName === 'BR' ? '\n' : node.nodeType === 3 ? node.textContent : '').join('')
+    const lines = displayed.split(/\n/u)
+    expect(lines.every((line) => line.trim().split(/\s+/u).length <= 10)).toBe(true)
   })
 
   it('rejoins and replaces local messages with the shared history snapshot', async () => {

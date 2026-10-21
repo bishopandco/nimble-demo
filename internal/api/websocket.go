@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -15,6 +16,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
+
+	"go-api/internal/bot"
+	"go-api/internal/model"
+	"go-api/internal/store"
 )
 
 const (
@@ -28,27 +33,24 @@ const (
 	chatNameLimit    = 40
 )
 
-// SocketMessage carries chat, REST notifications, and connection messages.
-type SocketMessage struct {
-	Type      string          `json:"type"`
-	Resource  string          `json:"resource,omitempty"`
-	ID        int64           `json:"id,omitempty"`
-	Timestamp time.Time       `json:"timestamp"`
-	Message   string          `json:"message,omitempty"`
-	Name      string          `json:"name,omitempty"`
-	ClientID  uint64          `json:"client_id,omitempty"`
-	History   []SocketMessage `json:"history,omitempty"`
-}
+// SocketMessage is the shared outbound protocol model.
+type SocketMessage = model.SocketMessage
 
 type socketHub struct {
-	mu         sync.Mutex
-	clients    map[*socketClient]struct{}
-	closed     bool
-	wg         sync.WaitGroup
-	logger     *slog.Logger
-	nextID     atomic.Uint64
-	nextChatID int64
-	history    []SocketMessage
+	mu          sync.Mutex
+	clients     map[*socketClient]struct{}
+	closed      bool
+	wg          sync.WaitGroup
+	logger      *slog.Logger
+	nextID      atomic.Uint64
+	store       *store.Store
+	history     []SocketMessage
+	bot         bot.Generator
+	botTimeout  time.Duration
+	botQueue    chan botJob
+	botCancel   context.CancelFunc
+	botWG       sync.WaitGroup
+	botClientID uint64
 }
 
 type socketClient struct {
@@ -60,8 +62,16 @@ type socketClient struct {
 	id     uint64
 }
 
-func newSocketHub(logger *slog.Logger) *socketHub {
-	return &socketHub{clients: make(map[*socketClient]struct{}), logger: logger.With("component", "websocket")}
+func newSocketHub(ctx context.Context, db *store.Store, logger *slog.Logger) (*socketHub, error) {
+	saved, err := db.RecentMessages(ctx, chatHistoryLimit)
+	if err != nil {
+		return nil, err
+	}
+	hub := &socketHub{clients: make(map[*socketClient]struct{}), store: db, logger: logger.With("component", "websocket")}
+	for _, message := range saved {
+		hub.history = append(hub.history, message.SocketMessage())
+	}
+	return hub, nil
 }
 
 func (h *socketHub) serveHTTP(w http.ResponseWriter, r *http.Request) {
@@ -94,11 +104,21 @@ func (h *socketHub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		logger.Warn("socket connection rejected", "error", err)
 		return
 	}
+	registrationCtx, cancelRegistration := context.WithTimeout(r.Context(), socketWriteWait)
+	identity, err := h.store.CreateConnection(registrationCtx)
+	cancelRegistration()
+	if err != nil {
+		logger.Error("socket registration failed", "error", err)
+		_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInternalServerErr, "could not register connection"), time.Now().Add(socketWriteWait))
+		_ = conn.Close()
+		return
+	}
+	logger = logger.With("client_id", identity.ID)
 	started := time.Now()
 	var received int
 	var closeCode int
 	disconnectReason := "client disconnected"
-	client := &socketClient{conn: conn, send: make(chan SocketMessage, socketQueueSize), done: make(chan struct{}), id: connectionID}
+	client := &socketClient{conn: conn, send: make(chan SocketMessage, socketQueueSize), done: make(chan struct{}), id: identity.ID}
 	conn.SetReadLimit(socketReadLimit)
 	_ = conn.SetReadDeadline(time.Now().Add(socketPongWait))
 	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(socketPongWait)) })
@@ -109,7 +129,7 @@ func (h *socketHub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		client.close("server shutting down")
 		return
 	}
-	// Queue ready before registration so it precedes every change notification.
+	// Queue ready before registration so history precedes every live message.
 	client.send <- SocketMessage{Type: "ready", ClientID: client.id, Timestamp: time.Now().UTC(), History: append([]SocketMessage(nil), h.history...)}
 	h.clients[client] = struct{}{}
 	h.wg.Add(1)
@@ -172,11 +192,7 @@ func (h *socketHub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		message := SocketMessage{Type: "pong", Timestamp: time.Now().UTC()}
-		var input struct {
-			Type    string `json:"type"`
-			Name    string `json:"name"`
-			Message string `json:"message"`
-		}
+		var input model.SocketInput
 		decoder := json.NewDecoder(bytes.NewReader(payload))
 		decoder.DisallowUnknownFields()
 		validationError := ""
@@ -203,7 +219,7 @@ func (h *socketHub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if validationError == "" && input.Type == "chat" {
-			h.chat(client, input.Name, input.Message)
+			h.chat(r.Context(), client, input.Name, input.Message)
 			continue
 		}
 		if validationError != "" {
@@ -217,29 +233,43 @@ func (h *socketHub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *socketHub) publish(action, resource string, id int64) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	message := SocketMessage{Type: action, Resource: resource, ID: id, Timestamp: time.Now().UTC()}
-	h.broadcast(message)
-}
-
-func (h *socketHub) chat(client *socketClient, name, text string) {
+func (h *socketHub) chat(ctx context.Context, client *socketClient, name, text string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if _, exists := h.clients[client]; h.closed || !exists {
 		return
 	}
-	h.nextChatID++
-	message := SocketMessage{Type: "chat", ID: h.nextChatID, ClientID: client.id, Name: name, Message: text, Timestamp: time.Now().UTC()}
-	h.history = append(h.history, message)
-	if len(h.history) > chatHistoryLimit {
-		h.history = h.history[len(h.history)-chatHistoryLimit:]
+	saveCtx, cancel := context.WithTimeout(ctx, socketWriteWait)
+	defer cancel()
+	saved, err := h.store.CreateMessage(saveCtx, client.id, name, text)
+	if err != nil {
+		h.logger.Error("chat message persistence failed", "client_id", client.id, "error", err)
+		h.enqueue(client, SocketMessage{Type: "error", Message: "Message was not saved. Please try again.", Timestamp: time.Now().UTC()})
+		return
 	}
-	h.broadcast(message)
+	h.publishChat(saved)
+	request, command, err := bot.Parse(text)
+	if !command {
+		return
+	}
+	if err != nil {
+		h.botError(client, err.Error())
+		return
+	}
+	if h.bot == nil {
+		h.botError(client, "Bot is disabled on this server.")
+		return
+	}
+	job := botJob{request: request, promptID: saved.ID, sender: client}
+	select {
+	case h.botQueue <- job:
+		h.broadcast(SocketMessage{Type: "bot_status", ID: saved.ID, State: "queued", Timestamp: time.Now().UTC()})
+	default:
+		h.botError(client, "Bot queue is full. Please try again shortly.")
+	}
 }
 
-// broadcast requires mu. All chat and REST events use this one shared room.
+// broadcast requires mu. All chat messages use this one shared room.
 func (h *socketHub) broadcast(message SocketMessage) {
 	if h.closed {
 		return
@@ -249,7 +279,7 @@ func (h *socketHub) broadcast(message SocketMessage) {
 	}
 }
 
-// enqueue requires mu. A slow connection cannot block REST writes or other clients.
+// enqueue requires mu. A slow connection cannot block other clients.
 func (h *socketHub) enqueue(client *socketClient, message SocketMessage) {
 	if _, ok := h.clients[client]; !ok {
 		return
@@ -265,6 +295,9 @@ func (h *socketHub) enqueue(client *socketClient, message SocketMessage) {
 func (h *socketHub) close() {
 	h.mu.Lock()
 	h.closed = true
+	if h.botCancel != nil {
+		h.botCancel()
+	}
 	clients := make([]*socketClient, 0, len(h.clients))
 	for client := range h.clients {
 		clients = append(clients, client)
@@ -277,6 +310,7 @@ func (h *socketHub) close() {
 		client.close("server shutting down")
 	}
 	h.wg.Wait()
+	h.botWG.Wait()
 }
 
 func (c *socketClient) close(reason string) {
