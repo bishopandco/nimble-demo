@@ -1,0 +1,12 @@
+/bin/
+/.air/
+/data/
+*.db
+*.db-shm
+*.db-wal
+coverage.out
+.DS_Store
+.env
+node_modules/
+/frontend/dist/
+/frontend/coverage/
