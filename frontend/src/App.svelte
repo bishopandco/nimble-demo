@@ -1,5 +1,5 @@
 <script>
-  import { onMount, untrack } from 'svelte'
+  import { onMount, tick, untrack } from 'svelte'
   import MeasuredText from './MeasuredText.svelte'
   import MessageBody from './MessageBody.svelte'
   import BotMonitor from './BotMonitor.svelte'
@@ -16,6 +16,7 @@
   let followLatest = $state(true)
   let monitorOpen = $state(true)
   let theme = $state(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
+  let themeTransition = null
   const labels = { connecting: 'Connecting', connected: 'Connected', reconnecting: 'Reconnecting', disconnected: 'Disconnected' }
   const preparedPrompts = [
     '/bot what is the ultimate question?',
@@ -50,10 +51,30 @@
   }
 
   function toggleTheme() {
-    theme = theme === 'dark' ? 'light' : 'dark'
-    document.documentElement.dataset.theme = theme
-    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#1b1d1a' : '#f4f3ed')
-    try { localStorage.setItem('chat-theme', theme) } catch {}
+    if (themeTransition) return
+    const nextTheme = theme === 'dark' ? 'light' : 'dark'
+    const applyTheme = () => {
+      theme = nextTheme
+      document.documentElement.dataset.theme = theme
+      document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#1b1d1a' : '#f4f3ed')
+      try { localStorage.setItem('chat-theme', theme) } catch {}
+    }
+    if (!document.startViewTransition || window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches) {
+      applyTheme()
+      return
+    }
+    try {
+      themeTransition = document.startViewTransition(() => {
+        applyTheme()
+        return tick()
+      })
+      // Snapshot capture may be skipped (for example, in a hidden tab).
+      themeTransition.ready.catch(() => {})
+      themeTransition.finished.catch(() => {}).finally(() => { themeTransition = null })
+    } catch {
+      themeTransition = null
+      applyTheme()
+    }
   }
 
   function onKeydown(event) {
@@ -76,7 +97,10 @@
 
   onMount(() => {
     chat.connect()
-    return chat.disconnect
+    return () => {
+      themeTransition?.skipTransition()
+      chat.disconnect()
+    }
   })
 </script>
 

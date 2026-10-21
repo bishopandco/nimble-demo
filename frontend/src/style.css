@@ -36,6 +36,19 @@
   color-scheme: dark;
 }
 
+::view-transition-group(root),
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 240ms;
+  animation-timing-function: ease-in-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(root),
+  ::view-transition-old(root),
+  ::view-transition-new(root) { animation: none; }
+}
+
 * { box-sizing: border-box; }
 body { margin: 0; }
 button, input, textarea { font: inherit; border-radius: 0; }

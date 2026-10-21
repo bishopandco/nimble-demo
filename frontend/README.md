@@ -24,6 +24,9 @@ The sidebar's **Dark mode** switch toggles the full interface between light and
 dark palettes. The initial theme follows your system preference. An explicit
 choice is saved in this browser and applied before the app paints on reload.
 If browser storage is unavailable, switching still works for the current page.
+Theme changes crossfade over 240 ms using the browser's View Transition API.
+Reduced-motion preferences disable the fade. Browsers without the API switch
+instantly, and the saved theme still applies immediately on initial load.
 
 Interface copy stays within ten words per line. `MeasuredText.svelte` adds
 presentation breaks every ten words in messages, names, and errors. It preserves
