@@ -74,7 +74,6 @@ h1 { grid-column: 4 / -1; font: var(--type-display); letter-spacing: -.065em; }
 .workspace { align-items: start; }
 .profile-panel { grid-column: 1 / 4; min-width: 0; padding-top: 24px; border-top: 2px solid var(--ink); }
 h2 { font: var(--type-section); letter-spacing: -.035em; }
-.profile-panel h2 { margin-bottom: 32px; }
 .profile-panel label { display: block; margin-bottom: 8px; }
 .profile-panel input { width: 100%; min-width: 0; padding: 8px 0; border: 0; border-bottom: 1px solid var(--ink); background: transparent; color: var(--ink); }
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
@@ -159,7 +158,6 @@ textarea:focus-visible { outline-offset: 4px; }
   h1, .profile-panel, .chat-panel { grid-column: 1 / -1; }
   .workspace { row-gap: 32px; }
   .profile-panel { display: grid; grid-template-columns: 1fr; padding-top: 16px; }
-  .profile-panel h2 { margin-bottom: 24px; }
   .connection-description { margin-top: 24px; }
   .room-note { max-width: 34ch; margin-top: 16px; }
   .chat-toolbar { min-height: 64px; }

@@ -29,7 +29,7 @@
   const canPrompt = $derived(connection.status === 'connected' && nameLength <= NAME_LIMIT)
   const canSend = $derived(connection.status === 'connected' && draft.trim() && draftLength <= TEXT_LIMIT && nameLength <= NAME_LIMIT)
   const description = $derived.by(() => {
-    if (connection.status === 'connected') return 'You’re in the shared room.'
+    if (connection.status === 'connected') return ''
     if (connection.status === 'reconnecting') return `Rejoining in ${connection.retryDelay / 1000} seconds.`
     if (connection.status === 'connecting') return 'Joining the conversation…'
     return 'You’re offline. Connect to rejoin.'
@@ -110,12 +110,11 @@
       <h1>Go API / Svelte Socket Demo</h1>
     </div>
     <div class="workspace grid">
-      <aside class="profile-panel" aria-labelledby="profile-heading">
-        <h2 id="profile-heading">Join the room</h2>
+      <aside class="profile-panel" aria-label="Chat controls">
         <label for="display-name">Display name</label>
         <input id="display-name" bind:value={name} maxlength={NAME_LIMIT * 2} placeholder={guestName} aria-invalid={nameLength > NAME_LIMIT} aria-describedby="name-hint" autocomplete="nickname" />
         <p id="name-hint" class="field-hint" class:invalid={nameLength > NAME_LIMIT} aria-live="polite">{#if nameLength > NAME_LIMIT}Use {NAME_LIMIT} characters or fewer.{:else}Leave blank to chat as {guestName}.{/if}</p>
-        <p class="connection-description" aria-live="polite">{description}</p>
+        {#if description}<p class="connection-description" aria-live="polite">{description}</p>{/if}
         {#if connection.status === 'disconnected'}
           <button class="button" onclick={chat.connect}>Connect to room <span aria-hidden="true">↗</span></button>
         {:else}
