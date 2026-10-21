@@ -42,3 +42,10 @@ CREATE TABLE IF NOT EXISTS bot_call_events (
     data TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS bot_call_events_call ON bot_call_events(call_id, id);
+
+CREATE TABLE IF NOT EXISTS bot_memory (
+    key TEXT PRIMARY KEY CHECK (length(key) BETWEEN 1 AND 80),
+    content TEXT NOT NULL CHECK (length(content) BETWEEN 1 AND 1000),
+    source_message_id INTEGER NOT NULL REFERENCES chat_messages(id),
+    updated_at TEXT NOT NULL
+);

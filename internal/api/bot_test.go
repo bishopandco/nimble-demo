@@ -75,7 +75,7 @@ func TestBotRepliesAreSharedPersistedAndDoNotBlockChat(t *testing.T) {
 	}
 	select {
 	case request := <-requests:
-		if request.Provider != "codex" || request.Prompt != "Explain sockets" {
+		if request.Provider != "codex" || request.Prompt != "Explain sockets" || request.MessageID != prompt.ID {
 			t.Fatalf("wrong request: %+v", request)
 		}
 	case <-time.After(time.Second):
@@ -228,11 +228,19 @@ func TestRealSidecarBinaryThroughChat(t *testing.T) {
 		t.Fatalf("build sidecar: %s, %v", output, err)
 	}
 	provider := filepath.Join(t.TempDir(), "fake-codex")
-	if err := os.WriteFile(provider, []byte("#!/bin/sh\ncat >/dev/null\nprintf 'Real sidecar integration reply\\n'\n"), 0700); err != nil {
+	if err := os.WriteFile(provider, []byte("#!/bin/sh\ncat >/dev/null\nprintf '%s\\n' '{\"action\":\"reply\",\"text\":\"Real sidecar integration reply\"}'\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("BOT_CODEX_BIN", provider)
-	server, _ := botServer(t, testStore(t), bot.Client{Path: sidecar}, 5*time.Second)
+	t.Setenv("BOT_PROMPT_FILE", "")
+	path := filepath.Join(t.TempDir(), "chat.db")
+	t.Setenv("DB_PATH", path)
+	db, err := store.Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { db.Close() })
+	server, _ := botServer(t, db, bot.Client{Path: sidecar}, 5*time.Second)
 	conn, _ := connectChat(t, server)
 	sendChat(t, conn, "Ada", "/bot codex Hello")
 	receiveSocket(t, conn)

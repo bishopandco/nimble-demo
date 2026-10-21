@@ -23,7 +23,12 @@ func (c CLI) Generate(ctx context.Context, request Request) (Response, error) {
 	if err := validate(request); err != nil {
 		return Response{}, err
 	}
-	provider, path, err := c.provider(request.Provider)
+	return c.generatePrompt(ctx, request.Provider, request.Prompt, false)
+}
+
+// Expanded context and tool envelopes stay inside the sidecar, not the public request.
+func (c CLI) generatePrompt(ctx context.Context, requested, prompt string, structured bool) (Response, error) {
+	provider, path, err := c.provider(requested)
 	if err != nil {
 		return Response{}, err
 	}
@@ -33,7 +38,7 @@ func (c CLI) Generate(ctx context.Context, request Request) (Response, error) {
 	} else {
 		args = []string{"--print", "--output-format", "json", "--tools", "", "--permission-mode", "dontAsk", "--strict-mcp-config", "--mcp-config", `{"mcpServers":{}}`, "--setting-sources", "", "--no-session-persistence"}
 	}
-	stdout, _, err := process.Run(ctx, path, args, strings.NewReader(request.Prompt), c.Dir, 128<<10, 500*time.Millisecond)
+	stdout, _, err := process.Run(ctx, path, args, strings.NewReader(prompt), c.Dir, 128<<10, 500*time.Millisecond)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
 			return Response{}, errors.New("bot request timed out")
@@ -65,7 +70,7 @@ func (c CLI) Generate(ctx context.Context, request Request) (Response, error) {
 	if output == "" || !utf8.ValidString(output) {
 		return Response{}, errors.New("CLI returned no valid text")
 	}
-	if utf8.RuneCountInString(output) > MaxOutput {
+	if !structured && utf8.RuneCountInString(output) > MaxOutput {
 		runes := []rune(output)
 		const suffix = "\n[Output truncated]"
 		output = string(runes[:MaxOutput-len([]rune(suffix))]) + suffix

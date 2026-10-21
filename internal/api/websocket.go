@@ -273,6 +273,7 @@ func (h *socketHub) chat(ctx context.Context, client *socketClient, name, text s
 		h.botError(client, saved.ID, "Bot queue is full. Please try again shortly.")
 		return
 	}
+	request.MessageID = saved.ID
 	if h.monitor != nil {
 		if err := h.monitor.Queue(ctx, saved.ID, request.Provider); err != nil {
 			h.logger.Error("register monitored bot call", "prompt_id", saved.ID, "error", err)

@@ -17,8 +17,9 @@ const MaxOutput = 16000
 const Usage = "Use /bot [codex|claude] followed by a prompt."
 
 type Request struct {
-	Provider string `json:"provider"`
-	Prompt   string `json:"prompt"`
+	Provider  string `json:"provider"`
+	Prompt    string `json:"prompt"`
+	MessageID int64  `json:"message_id,omitempty"`
 }
 
 type Response struct {

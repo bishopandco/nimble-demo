@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"go-api/internal/store"
 )
 
 func TestSidecarTimeoutStopsProviderProcess(t *testing.T) {
@@ -29,9 +31,25 @@ func TestSidecarTimeoutStopsProviderProcess(t *testing.T) {
 	}
 	t.Setenv("BOT_CODEX_BIN", provider)
 	t.Setenv("GO_BOT_PID_FILE", pidFile)
+	t.Setenv("BOT_PROMPT_FILE", "")
+	path := filepath.Join(t.TempDir(), "chat.db")
+	t.Setenv("DB_PATH", path)
+	db, err := store.Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	connection, err := db.CreateConnection(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	prompt, err := db.CreateMessage(context.Background(), connection.ID, "Ada", "/bot codex Hello")
+	if err != nil {
+		t.Fatal(err)
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	_, err := (Client{Path: sidecar}).Generate(ctx, Request{Provider: "codex", Prompt: "Hello"})
+	_, err = (Client{Path: sidecar}).Generate(ctx, Request{Provider: "codex", Prompt: "Hello", MessageID: prompt.ID})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("unexpected timeout: %v", err)
 	}

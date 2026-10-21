@@ -25,7 +25,10 @@ func main() {
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	generator := bot.CLI{CodexPath: os.Getenv("BOT_CODEX_BIN"), ClaudePath: os.Getenv("BOT_CLAUDE_BIN"), Dir: os.Getenv("BOT_WORKDIR")}
+	generator := bot.Agent{
+		CLI:      bot.CLI{CodexPath: os.Getenv("BOT_CODEX_BIN"), ClaudePath: os.Getenv("BOT_CLAUDE_BIN"), Dir: os.Getenv("BOT_WORKDIR")},
+		Database: os.Getenv("DB_PATH"), PromptFile: os.Getenv("BOT_PROMPT_FILE"),
+	}
 	if err := bot.Serve(ctx, os.Stdin, os.Stdout, generator); err != nil {
 		slog.Error("sidecar response failed", "error", err)
 		os.Exit(1)

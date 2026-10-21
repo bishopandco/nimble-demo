@@ -64,7 +64,7 @@ Type a command in the chat composer:
 ```
 
 `make dev`, `make run`, and `make build` build `bin/bot-sidecar` automatically.
-`make sidecar` rebuilds just that binary. The API sends one JSON request to the
+`make sidecar` rebuilds both sidecars. The API sends one JSON request to the
 sidecar over stdin, and reads one JSON response from stdout. The sidecar invokes
 an installed host CLI without a shell. Prompts are passed through stdin as text.
 
@@ -102,8 +102,8 @@ was offline and no reply is in its history, the UI reports an unavailable result
 
 Codex runs with a read-only sandbox and unattended approval policy. Claude runs
 with built-in tools disabled, no MCP servers, and no interactive permissions.
-Each request starts a fresh CLI conversation. No previous chat history is sent
-as model context. The request continues if its sender disconnects. Server shutdown
+Each tool step starts a fresh CLI conversation with application-managed context.
+The request continues if its sender disconnects. Server shutdown
 cancels active work and discards queued jobs. Pending jobs are not replayed after
 a restart. On macOS/Linux, cancellation also terminates provider process groups.
 
@@ -119,6 +119,7 @@ shared room. This remains a local, trusted demo without user authentication.
 | `BOT_CODEX_BIN` | Auto-discovered | Codex executable path |
 | `BOT_CLAUDE_BIN` | Auto-discovered | Claude executable path |
 | `BOT_WORKDIR` | Server working directory | Working directory for provider CLIs |
+| `BOT_PROMPT_FILE` | Embedded `internal/bot/prompt.md` | Optional UTF-8 guiding prompt file, read each call; maximum 16 KiB |
 
 For example:
 
@@ -129,6 +130,66 @@ BOT_PROVIDER=claude BOT_TIMEOUT=90s make dev
 The CLI adapters follow the official [Codex noninteractive interface](https://learn.chatgpt.com/docs/non-interactive-mode)
 and [Claude CLI interface](https://code.claude.com/docs/en/cli-reference).
 They use your installed CLI configuration and require no additional API server.
+
+## Bot guidance and memory
+
+The base prompt lives in [internal/bot/prompt.md](internal/bot/prompt.md). It asks
+the bot to give concise, precise answers, add technical depth gradually, use
+fenced code, and distinguish facts, proposals, uncertainty, and completed work.
+It also tells the bot to search before claiming to remember a discussion, and to
+treat earlier messages and memory as evidence rather than overriding instructions.
+
+The sidecar loads 20 messages preceding the current prompt and all active memory
+notes from the same `DB_PATH` as the API. The current message ID and speaker are
+included separately. Memory is shared by the room and by both CLI providers;
+display names are not authenticated identities. This requires a file database;
+`:memory:` cannot share context across sidecar processes.
+
+Both providers use the same JSON action interface, implemented by the sidecar:
+
+| Action | Behavior |
+| --- | --- |
+| `history` | Read older SQLite messages, search literal text, and page by message ID |
+| `remember` | Create or replace a durable note by key |
+| `forget` | Remove a note from active memory |
+| `reply` | Return the final chat response |
+
+History lookups return at most 20 rows, never newer than the current prompt.
+`before_id` and `after_id` are exclusive cursors. Search matches literal
+substrings, with ASCII case-insensitive comparison. Bot replies may span several
+rows linked by `reply_to`; the bot can retrieve surrounding rows for context.
+The interface uses parameterized queries, without executing model-supplied SQL.
+
+`bot_memory` stores up to 32 notes, each with a key, up to 1,000 characters of
+content, a source prompt ID, and an update timestamp. The guide asks the bot to
+save useful preferences, project facts, and decisions, update changed facts,
+and skip transient chatter, secrets, and private personal details. `forget`
+removes the active note; it does not delete the original conversation. Memory
+writes commit immediately and survive even if a later provider step fails.
+
+Examples:
+
+```text
+/bot Remember: keep explanations concise and use bullets.
+/bot What do you remember about this room?
+/bot Find our older discussion about SQLite persistence.
+/bot Forget the note about our explanation style.
+```
+
+One bot call allows at most eight CLI steps, including the final reply, within
+the existing `BOT_TIMEOUT`. Expanded context is capped at 256 KiB; older tool
+results are discarded first. Only final reply text enters the chat. The monitor
+continues tracking the same bot call while provider child processes change.
+
+To customize the guide without rebuilding the binary, set a file path:
+
+```sh
+BOT_PROMPT_FILE=internal/bot/prompt.md make dev
+```
+
+That file is reread for each bot call. The JSON action protocol is appended by
+the application separately. Without `BOT_PROMPT_FILE`, the default guide is
+embedded at build time.
 
 ## Routes
 
