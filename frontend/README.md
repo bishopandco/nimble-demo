@@ -55,8 +55,14 @@ prompt, as a bot message directly after the prompt. Its spinner stays active unt
 a reply or error replaces it in that same thread position. Pending rows are restored
 on reconnect. The spinner respects reduced-motion preferences. Bot replies are
 labeled `bot`, broadcast to the room, and saved alongside their prompt IDs.
-Reply chunks are combined into one displayed message before parsing backtick or
-tilde code fences. Provider errors replace the sender's pending message; other
+Reply chunks are combined before formatting. Messages support bold, emphasis,
+strikethrough, inline code, paragraphs, headings, lists, quotes, tables, and links.
+Backtick and tilde code fences preserve code whitespace and language labels.
+Formatting uses Marked tokens rendered as Svelte elements, without raw HTML.
+HTML remains visible text; images show their alt text. Links allow only HTTP,
+HTTPS, and email destinations. Prose retains the ten-word line limit across
+inline formatting, while code blocks keep their original line lengths.
+Provider errors replace the sender's pending message; other
 participants see a generic failure message.
 See the root README for CLI installation, login, and sidecar configuration.
 

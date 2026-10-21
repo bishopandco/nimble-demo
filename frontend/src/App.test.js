@@ -205,7 +205,7 @@ describe('shared chatroom', () => {
     const bubble = element('.message-bubble')
     expect(bubble.textContent).toBe(message)
     expect(bubble.querySelectorAll('br')).toHaveLength(2)
-    const displayed = Array.from(bubble.childNodes)
+    const displayed = Array.from(bubble.querySelector('p').childNodes)
       .map((node) => node.nodeName === 'BR' ? '\n' : node.nodeType === 3 ? node.textContent : '').join('')
     const lines = displayed.split(/\n/u)
     expect(lines.every((line) => line.trim().split(/\s+/u).length <= 10)).toBe(true)

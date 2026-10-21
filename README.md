@@ -87,8 +87,10 @@ every connected client receives the completed reply. Replies are committed to
 SQLite before broadcast. Long replies are split into 500-character messages,
 with all parts saved atomically. Output is capped at 16,000 Unicode characters,
 with an explicit truncation marker. Raw process output is bounded to 128 KiB.
-The frontend combines chunks into one reply, including fenced code blocks with
-preserved indentation. It renders code as text without executing HTML.
+The frontend combines chunks into one reply with Markdown formatting for bold,
+emphasis, paragraphs, lists, headings, quotes, tables, and links. Inline code and
+fenced code blocks retain code formatting. HTML is displayed as text; remote
+images are not loaded. Prose keeps the ten-word line limit across inline styles.
 
 Bot messages carry `provider` and `reply_to` fields. `reply_to` is the persisted
 prompt message ID. `chat_bot_messages` stores this metadata. Bot output is never
