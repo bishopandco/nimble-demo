@@ -15,6 +15,7 @@
   let composer = $state(null)
   let followLatest = $state(true)
   let monitorOpen = $state(true)
+  let theme = $state(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
   const labels = { connecting: 'Connecting', connected: 'Connected', reconnecting: 'Reconnecting', disconnected: 'Disconnected' }
   const preparedPrompts = [
     '/bot what is the ultimate question?',
@@ -46,6 +47,13 @@
     if (!canPrompt || !chat.sendChat(name, prompt)) return
     followLatest = true
     composer?.focus()
+  }
+
+  function toggleTheme() {
+    theme = theme === 'dark' ? 'light' : 'dark'
+    document.documentElement.dataset.theme = theme
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', theme === 'dark' ? '#1b1d1a' : '#f4f3ed')
+    try { localStorage.setItem('chat-theme', theme) } catch {}
   }
 
   function onKeydown(event) {
@@ -92,6 +100,9 @@
         {:else}
           <button class="button" onclick={chat.disconnect}>Disconnect <span aria-hidden="true">↗</span></button>
         {/if}
+        <button class="button theme-toggle" type="button" role="switch" aria-checked={theme === 'dark'} onclick={toggleTheme}>
+          <span>Dark mode</span><span class="theme-switch" aria-hidden="true"></span>
+        </button>
         <p class="room-note">Open another window to join as someone else.</p>
       </aside>
       <section class="chat-panel" aria-labelledby="chat-heading">
