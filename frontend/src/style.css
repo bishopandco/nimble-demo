@@ -74,9 +74,15 @@ h3 { font: var(--type-heading); letter-spacing: -.045em; }
 .message-meta strong { font: var(--type-emphasis); overflow-wrap: anywhere; white-space: pre-wrap; }
 .message-meta time { flex-shrink: 0; font: var(--type-detail); color: var(--muted); font-variant-numeric: tabular-nums; }
 .you-label { margin-left: 8px; font: var(--type-detail); color: var(--muted); }
-.message-bubble { white-space: pre-wrap; overflow-wrap: anywhere; }
+.message-bubble { max-inline-size: 48ch; white-space: pre-wrap; overflow-wrap: anywhere; }
+.message-code { max-inline-size: 100%; margin: 16px 0; padding: 16px; overflow-x: auto; border: 1px solid var(--rule); background: #eae9e1; font: var(--type-body); white-space: pre; overflow-wrap: normal; tab-size: 2; }
+.message-code code { font: inherit; }
+.bot-message { border-left-color: var(--accent); }
+.bot-activity { display: flex; align-items: center; gap: 8px; color: var(--muted); }
+.progress-spinner { flex: 0 0 16px; width: 16px; height: 16px; border: 2px solid var(--rule); border-top-color: var(--accent); border-radius: 50%; animation: thinking-spin .8s linear infinite; }
+@keyframes thinking-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .progress-spinner { animation: none; } }
 .composer-area { padding-block: 24px; border-top: 1px solid var(--ink); }
-.bot-activity { font: var(--type-detail); margin-bottom: 16px; color: var(--muted); }
 .chat-error { margin-bottom: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .composer { padding: 16px; background: #eae9e1; border: 1px solid var(--rule); }
 textarea { display: block; width: 100%; padding: 0; min-height: 72px; max-height: 192px; border: 0; background: transparent; color: var(--ink); resize: vertical; }

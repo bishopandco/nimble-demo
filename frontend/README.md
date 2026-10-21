@@ -23,6 +23,8 @@ Six type styles are defined in `src/style.css`:
 Interface copy stays within ten words per line. `MeasuredText.svelte` adds
 presentation breaks every ten words in messages, names, and errors. It preserves
 the original text, whitespace, and explicit newlines without changing socket data.
+Fenced code blocks preserve their original lines and indentation, with horizontal
+scrolling for long lines. Code is displayed as text, never executed as HTML.
 
 ## Development
 
@@ -49,9 +51,13 @@ Messages allow up to 500 Unicode characters; names allow up to 40.
 
 Use `/bot <prompt>`, `/bot codex <prompt>`, or `/bot claude <prompt>` to ask the
 host CLI. A thinking indicator appears immediately after the server accepts a
-prompt. It stays active until a reply or error and is restored on reconnect. Bot replies
-are labeled `bot`, broadcast to the room, and saved alongside their prompt IDs.
-Long replies appear as several messages. Provider errors appear only to the sender.
+prompt, as a bot message directly after the prompt. Its spinner stays active until
+a reply or error replaces it in that same thread position. Pending rows are restored
+on reconnect. The spinner respects reduced-motion preferences. Bot replies are
+labeled `bot`, broadcast to the room, and saved alongside their prompt IDs.
+Reply chunks are combined into one displayed message before parsing backtick or
+tilde code fences. Provider errors replace the sender's pending message; other
+participants see a generic failure message.
 See the root README for CLI installation, login, and sidecar configuration.
 
 `make dev` rebuilds and restarts the server when Go source changes.

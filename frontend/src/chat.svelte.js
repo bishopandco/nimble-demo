@@ -16,12 +16,23 @@ export function createChatSocket() {
   const url = new URL('/ws', window.location.href)
   url.protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const endpoint = url.href
-  const state = $state({ status: 'connecting', messages: [], clientID: 0, retryDelay: 0, error: '', botJobs: [] })
+  const state = $state({ status: 'connecting', messages: [], clientID: 0, retryDelay: 0, error: '', botJobs: [], botErrors: {} })
   let socket = null
   let retryTimer = null
   let connectTimer = null
   let retries = 0
   let enabled = true
+
+  function botError(promptID, message) {
+    const previous = Object.entries(state.botErrors).filter(([id]) => Number(id) !== promptID)
+    state.botErrors = Object.fromEntries([...previous, [promptID, message]].slice(-MESSAGE_LIMIT))
+  }
+
+  function clearBotError(promptID) {
+    if (state.botErrors[promptID]) {
+      state.botErrors = Object.fromEntries(Object.entries(state.botErrors).filter(([id]) => Number(id) !== promptID))
+    }
+  }
 
   function release() {
     clearTimeout(retryTimer)
@@ -81,9 +92,12 @@ export function createChatSocket() {
         const pending = Array.isArray(payload.pending_bot_ids)
           ? [...new Set(payload.pending_bot_ids.filter((id) => Number.isSafeInteger(id) && id > 0))] : []
         const completed = new Set(history.filter((entry) => entry.provider).map((entry) => entry.replyTo))
-        if (state.botJobs.some((id) => !pending.includes(id) && !completed.has(id))) {
-          state.error = 'A bot request ended while disconnected. Its result is unavailable.'
+        for (const id of state.botJobs) {
+          if (!pending.includes(id) && !completed.has(id)) {
+            botError(id, 'This request ended while disconnected. Its result is unavailable.')
+          }
         }
+        for (const id of completed) clearBotError(id)
         state.messages = history
         state.botJobs = pending
       } else if (payload?.type === 'chat') {
@@ -93,18 +107,26 @@ export function createChatSocket() {
         }
         if (entry?.provider && entry.replyTo > 0) {
           state.botJobs = state.botJobs.filter((id) => id !== entry.replyTo)
+          clearBotError(entry.replyTo)
         }
       } else if (payload?.type === 'bot_status' && Number.isSafeInteger(payload.id) && payload.id > 0) {
         if (['thinking', 'queued', 'running'].includes(payload.state)) {
           if (!state.botJobs.includes(payload.id)) state.botJobs = [...state.botJobs, payload.id]
+          clearBotError(payload.id)
         } else if (payload.state === 'done' || payload.state === 'failed') {
           state.botJobs = state.botJobs.filter((id) => id !== payload.id)
+          if (payload.state === 'failed' && !state.botErrors[payload.id]) {
+            botError(payload.id, 'The bot could not complete this request.')
+          } else if (payload.state === 'done' && !state.messages.some((entry) => entry.provider && entry.replyTo === payload.id)) {
+            botError(payload.id, 'The bot finished without a visible response.')
+          }
         }
       } else if (payload?.type === 'error') {
-        state.error = typeof payload.message === 'string' ? payload.message : 'The message was rejected.'
-        if (Number.isSafeInteger(payload.reply_to)) {
+        const message = typeof payload.message === 'string' ? payload.message : 'The message was rejected.'
+        if (Number.isSafeInteger(payload.reply_to) && payload.reply_to > 0) {
+          botError(payload.reply_to, message)
           state.botJobs = state.botJobs.filter((id) => id !== payload.reply_to)
-        }
+        } else state.error = message
       }
     }
     connection.onerror = () => {

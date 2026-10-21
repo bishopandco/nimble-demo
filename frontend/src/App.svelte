@@ -1,10 +1,13 @@
 <script>
   import { onMount, untrack } from 'svelte'
   import MeasuredText from './MeasuredText.svelte'
+  import MessageBody from './MessageBody.svelte'
+  import { buildThread } from './thread.js'
   import { characterCount, MESSAGE_LIMIT, NAME_LIMIT, TEXT_LIMIT, createChatSocket } from './chat.svelte.js'
 
   const chat = createChatSocket()
   const connection = chat.state
+  const thread = $derived(buildThread(connection.messages, connection.botJobs, connection.botErrors))
   let name = $state('')
   let draft = $state('')
   let conversation = $state(null)
@@ -43,7 +46,7 @@
   }
 
   $effect(() => {
-    connection.messages.at(-1)?.id
+    thread
     untrack(() => {
       if (conversation && followLatest) conversation.scrollTop = conversation.scrollHeight
     })
@@ -82,19 +85,25 @@
         <div class="chat-toolbar">
           <h2 id="chat-heading"><span class="channel-hash" aria-hidden="true">#</span>general</h2>
         </div>
-        <div bind:this={conversation} class="conversation" role="log" aria-label="Chat messages" aria-live="polite" aria-relevant="additions" onscroll={onScroll}>
-          {#if connection.messages.length === 0}
+        <div bind:this={conversation} class="conversation" role="log" aria-label="Chat messages" aria-live="polite" aria-relevant="additions text" onscroll={onScroll}>
+          {#if thread.length === 0}
             <div class="empty-state">
               <h3>A conversation<br />starts here.</h3>
               <p>Say hello to everyone in the room.</p>
             </div>
           {:else}
             <ol class="chat-messages">
-              {#each connection.messages as entry (entry.id)}
-                <li class="chat-message" class:own={entry.clientID === connection.clientID}>
+              {#each thread as entry (entry.key)}
+                <li class="chat-message" class:own={entry.clientID === connection.clientID} class:bot-message={entry.bot}>
                   <div class="message-content">
-                    <div class="message-meta"><strong><MeasuredText text={entry.name} />{#if entry.clientID === connection.clientID}<span class="you-label">you</span>{/if}{#if entry.provider}<span class="you-label">bot</span>{/if}</strong><time datetime={entry.date.toISOString()}>{time(entry.date)}</time></div>
-                    <p class="message-bubble"><MeasuredText text={entry.text} /></p>
+                    <div class="message-meta"><strong><MeasuredText text={entry.name} />{#if entry.clientID === connection.clientID}<span class="you-label">you</span>{/if}{#if entry.bot && entry.name !== 'Bot'}<span class="you-label">bot</span>{/if}</strong>{#if entry.date}<time datetime={entry.date.toISOString()}>{time(entry.date)}</time>{/if}</div>
+                    {#if entry.thinking}
+                      <div class="message-bubble bot-activity" role="status" aria-live="polite"><span class="progress-spinner" aria-hidden="true"></span><span>Thinking…</span></div>
+                    {:else if entry.error}
+                      <div class="message-bubble chat-error" role="alert"><MeasuredText text={entry.text} /></div>
+                    {:else}
+                      <div class="message-bubble"><MessageBody text={entry.text} /></div>
+                    {/if}
                   </div>
                 </li>
               {/each}
@@ -102,7 +111,6 @@
           {/if}
         </div>
         <div class="composer-area">
-          {#if connection.botJobs.length}<p class="bot-activity" role="status" aria-live="polite" aria-atomic="true">Bot is thinking…{#if connection.botJobs.length > 1} ({connection.botJobs.length} requests){/if}</p>{/if}
           {#if connection.error}<p class="chat-error" role="alert"><MeasuredText text={connection.error} /></p>{/if}
           <form class="composer" onsubmit={submit}>
             <label class="sr-only" for="chat-message">Message</label>

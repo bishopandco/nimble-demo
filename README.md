@@ -81,11 +81,14 @@ It does not switch providers after a failed run.
 
 Calls run one at a time, with space for eight queued prompts. Normal chat and
 heartbeat handling continue during a call. Accepted prompts immediately emit a
-`thinking` status. The room keeps its thinking indicator until a reply or error;
+`thinking` status. The room inserts a bot message with an animated spinner after
+the prompt. A reply or error replaces that same message;
 every connected client receives the completed reply. Replies are committed to
 SQLite before broadcast. Long replies are split into 500-character messages,
 with all parts saved atomically. Output is capped at 16,000 Unicode characters,
 with an explicit truncation marker. Raw process output is bounded to 128 KiB.
+The frontend combines chunks into one reply, including fenced code blocks with
+preserved indentation. It renders code as text without executing HTML.
 
 Bot messages carry `provider` and `reply_to` fields. `reply_to` is the persisted
 prompt message ID. `chat_bot_messages` stores this metadata. Bot output is never
