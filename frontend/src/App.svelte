@@ -74,7 +74,6 @@
 
 <div class="shell">
   <header class="topbar grid">
-    <a class="brand" href="/" aria-label="Chatroom home">Chatroom</a>
     <div class="connection-status {connection.status}" role="status"><span class="status-dot" aria-hidden="true"></span>{labels[connection.status]}</div>
   </header>
   <main>
