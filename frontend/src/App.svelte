@@ -16,9 +16,15 @@
   let followLatest = $state(true)
   let monitorOpen = $state(true)
   const labels = { connecting: 'Connecting', connected: 'Connected', reconnecting: 'Reconnecting', disconnected: 'Disconnected' }
+  const preparedPrompts = [
+    '/bot what is the ultimate question?',
+    '/bot roast this room, but keep it friendly.',
+    '/bot what have we talked about so far',
+  ]
   const guestName = $derived(connection.clientID ? `Guest ${connection.clientID}` : 'Guest')
   const draftLength = $derived(characterCount(draft))
   const nameLength = $derived(characterCount(name.trim()))
+  const canPrompt = $derived(connection.status === 'connected' && nameLength <= NAME_LIMIT)
   const canSend = $derived(connection.status === 'connected' && draft.trim() && draftLength <= TEXT_LIMIT && nameLength <= NAME_LIMIT)
   const description = $derived.by(() => {
     if (connection.status === 'connected') return 'You’re in the shared room.'
@@ -32,6 +38,12 @@
     event?.preventDefault()
     if (!canSend || !chat.sendChat(name, draft)) return
     draft = ''
+    followLatest = true
+    composer?.focus()
+  }
+
+  function sendPrompt(prompt) {
+    if (!canPrompt || !chat.sendChat(name, prompt)) return
     followLatest = true
     composer?.focus()
   }
@@ -115,6 +127,11 @@
         <div class="composer-area">
           {#if connection.error}<p class="chat-error" role="alert"><MeasuredText text={connection.error} /></p>{/if}
           <form class="composer" onsubmit={submit}>
+            <div class="bot-prompts" role="group" aria-label="Prepared bot prompts">
+              {#each preparedPrompts as prompt}
+                <button class="bot-prompt" type="button" disabled={!canPrompt} onclick={() => sendPrompt(prompt)}><MeasuredText text={prompt} /></button>
+              {/each}
+            </div>
             <label class="sr-only" for="chat-message">Message</label>
             <textarea id="chat-message" bind:this={composer} bind:value={draft} maxlength={TEXT_LIMIT * 2} disabled={connection.status !== 'connected'} placeholder={connection.status === 'connected' ? 'Message everyone…' : 'Connect to send a message…'} rows="2" onkeydown={onKeydown}></textarea>
             <div class="composer-toolbar"><span class="composer-hint">Enter to send.<br />Shift + Enter for a new line.<br />/bot followed by a prompt to ask.</span><div class="send-controls"><span class="character-count" class:over={draftLength > TEXT_LIMIT}>{draftLength}/{TEXT_LIMIT}</span><button class="send-button" type="submit" disabled={!canSend}>Send <span aria-hidden="true">↑</span></button></div></div>

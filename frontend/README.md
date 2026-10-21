@@ -60,6 +60,11 @@ tilde code fences. Provider errors replace the sender's pending message; other
 participants see a generic failure message.
 See the root README for CLI installation, login, and sidecar configuration.
 
+Three prepared prompt buttons sit above the input: the ultimate question, a
+friendly room roast, and a conversation recap. Clicking sends the command
+immediately using your display name and preserves any draft in the input.
+Buttons are disabled while disconnected or when the display name is too long.
+
 **Bot monitor** opens by default below the chat with a separate `/ws/monitor` connection.
 Its table shows bot call instances, sidecar and CLI PIDs, runtime, memory, and CPU.
 The two latest events appear beneath the table. Completed calls display ✅. History

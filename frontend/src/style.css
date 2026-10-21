@@ -85,6 +85,8 @@ h3 { font: var(--type-heading); letter-spacing: -.045em; }
 .composer-area { padding-block: 24px; border-top: 1px solid var(--ink); }
 .chat-error { margin-bottom: 16px; white-space: pre-wrap; overflow-wrap: anywhere; }
 .composer { padding: 16px; background: #eae9e1; border: 1px solid var(--rule); }
+.bot-prompts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 192px), 1fr)); gap: 8px; margin-bottom: 16px; }
+.bot-prompt { padding: 8px; border: 1px solid var(--rule); background: var(--paper); color: var(--ink); text-align: left; font: var(--type-detail); overflow-wrap: anywhere; }
 textarea { display: block; width: 100%; padding: 0; min-height: 72px; max-height: 192px; border: 0; background: transparent; color: var(--ink); resize: vertical; }
 textarea:focus-visible { outline-offset: 4px; }
 .composer-toolbar { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-top: 16px; }
