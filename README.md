@@ -1,4 +1,4 @@
-# Common room
+# Nimble demo
 
 A quick full-stack demo built with Go, Svelte, WebSockets, and SQLite. The shared
 chatroom connects to locally installed Claude or Codex CLIs through a bot sidecar.
