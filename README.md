@@ -1,9 +1,13 @@
 # Common room
 
-A shared chatroom with a Go WebSocket server and a Svelte frontend. Every
-connection joins the same conversation. SQLite stores accepted chat messages and
-connection identities. The latest 100 messages are sent to new connections and
-restored after server restarts.
+A quick full-stack demo built with Go, Svelte, WebSockets, and SQLite. The shared
+chatroom connects to locally installed Claude or Codex CLIs through a bot sidecar.
+A second sidecar monitors each bot call's process IDs, runtime, memory, and CPU,
+streaming live updates to the frontend.
+
+SQLite persists chat history, shared bot memory, and monitoring events. Every
+connection joins the same conversation, with the latest 100 messages restored
+on reconnect or server restart.
 
 ## Development
 
