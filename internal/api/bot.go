@@ -7,6 +7,8 @@ import (
 
 	"go-api/internal/bot"
 	"go-api/internal/model"
+	"go-api/internal/monitor"
+	"go-api/internal/process"
 )
 
 // Option configures an optional server component.
@@ -14,6 +16,10 @@ type Option func(*socketHub)
 
 func WithBot(generator bot.Generator, timeout time.Duration) Option {
 	return func(h *socketHub) { h.bot, h.botTimeout = generator, timeout }
+}
+
+func WithMonitor(service *monitor.Service) Option {
+	return func(h *socketHub) { h.monitor = service }
 }
 
 type botJob struct {
@@ -56,7 +62,26 @@ func (h *socketHub) runBot(ctx context.Context, job botJob) {
 	h.mu.Unlock()
 
 	requestCtx, cancel := context.WithTimeout(ctx, h.botTimeout)
-	response, err := h.bot.Generate(requestCtx, job.request)
+	var response bot.Response
+	var err error
+	var finalErr error
+	if h.monitor != nil {
+		defer func() {
+			status, message := "completed", ""
+			if ctx.Err() != nil {
+				status, message = "canceled", "Server stopped"
+			} else if finalErr != nil {
+				status, message = "failed", finalErr.Error()
+			}
+			h.monitor.Finished(job.promptID, status, response.Provider, message)
+		}()
+		err = h.monitor.Begin(requestCtx, job.promptID)
+		requestCtx = process.WithStarted(requestCtx, func(pid int) { h.monitor.Started(job.promptID, pid) })
+	}
+	if err == nil {
+		response, err = h.bot.Generate(requestCtx, job.request)
+	}
+	finalErr = err
 	cancel()
 	if ctx.Err() != nil {
 		return
@@ -90,6 +115,7 @@ func (h *socketHub) runBot(ctx context.Context, job botJob) {
 		}
 		saveFailed = err != nil
 	}
+	finalErr = err
 	state := "done"
 	if err != nil {
 		state = "failed"

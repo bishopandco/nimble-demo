@@ -12,6 +12,7 @@ import (
 
 	"go-api/internal/api"
 	"go-api/internal/bot"
+	"go-api/internal/monitor"
 	"go-api/internal/store"
 )
 
@@ -40,6 +41,14 @@ func run() error {
 		return errors.New("BOT_PROVIDER must be auto, codex, or claude")
 	}
 	var options []api.Option
+	if env("BOT_MONITOR_ENABLED", "true") != "false" && path != ":memory:" {
+		interval, err := time.ParseDuration(env("BOT_MONITOR_INTERVAL", "1s"))
+		if err != nil || interval < 250*time.Millisecond {
+			return errors.New("BOT_MONITOR_INTERVAL must be at least 250ms")
+		}
+		service := monitor.New(db, path, env("BOT_MONITOR_PATH", "bin/bot-monitor"), interval, slog.Default())
+		options = append(options, api.WithMonitor(service))
+	}
 	if env("BOT_ENABLED", "true") != "false" {
 		options = append(options, api.WithBot(bot.Client{Path: env("BOT_SIDECAR_PATH", "bin/bot-sidecar"), Provider: provider}, timeout))
 	}

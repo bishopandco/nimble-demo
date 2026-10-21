@@ -136,9 +136,75 @@ They use your installed CLI configuration and require no additional API server.
 | --- | --- | --- |
 | `GET` | `/health` | Database connectivity (`200`, or `503` when unavailable) |
 | `GET` | `/ws` | Upgrade to a WebSocket connection (`101`) |
+| `GET` | `/ws/monitor` | Independent bot monitor WebSocket (`101`) |
 
 Unknown routes return `404`. Unsupported methods return `405` with an `Allow`
 header. HTTP errors use `{"error":"message"}`.
+
+## Bot monitor
+
+The second sidecar, `bin/bot-monitor`, samples bot call process trees. The API
+starts and supervises it automatically. Open **Bot monitor** beneath the chat to
+connect the frontend to `/ws/monitor`. Chat and monitoring use separate sockets.
+
+The panel shows the latest 50 calls, prioritizing active calls, and 100 recent
+events. Each call includes its prompt ID, requested or resolved provider, state,
+sidecar PID, provider PID, runtime, memory, and CPU. Queued calls have no runtime
+until they start. The frontend updates elapsed time between snapshots.
+
+The API records queueing, execution start, the exact sidecar PID, and completion
+in SQLite. The monitor discovers provider children and records resource samples.
+All lifecycle changes and samples remain in `bot_call_events`; `bot_calls` holds
+the latest state. Each event includes its own call snapshot. No prompt text is
+copied into monitoring events. Tables are created alongside existing chat data.
+
+Sampling defaults to once per second. Memory is the sum of RSS for the sidecar
+and its descendants, in bytes; shared pages can count more than once. CPU is the
+sum of OS-reported process CPU percentages, which are estimates and may exceed
+100% across cores. The panel displays the latest sample, including for finished
+calls. A missing sample is shown as a dash. Very short calls can end between
+samples, but their sidecar PID and lifecycle are still recorded.
+
+Process collection uses `ps` on macOS/Linux. The collector checks the sidecar's
+parent PID before sampling its tree. If the API process disappears, unfinished
+calls become `interrupted`. Graceful shutdown records remaining calls as
+`canceled` and stops the monitor. If the monitor exits unexpectedly, the API
+restarts it and the frontend reconnects with a fresh persisted snapshot.
+
+The stream emits JSON messages with this shape:
+
+```json
+{
+  "type": "monitor_snapshot",
+  "source": "live",
+  "timestamp": "2026-10-21T18:00:00Z",
+  "calls": [],
+  "events": []
+}
+```
+
+Call records include `id`, `owner_pid`, `provider`, `status`, `queued_at`,
+`started_at`, `finished_at`, `pid`, `provider_pid`, `memory_bytes`, `cpu_percent`,
+`process_count`, `sampled_at`, and `elapsed_ms`. Unavailable measurements are
+`null`. Event records include `id`, `call_id`, `kind`, `timestamp`, and `call`.
+The feed is read-only and uses the same origin policy and heartbeats as chat.
+
+| Environment variable | Default | Purpose |
+| --- | --- | --- |
+| `BOT_MONITOR_ENABLED` | `true` | Set `false` to disable monitoring |
+| `BOT_MONITOR_PATH` | `bin/bot-monitor` | Monitor executable path |
+| `BOT_MONITOR_INTERVAL` | `1s` | Sample interval; minimum `250ms` |
+
+Monitoring requires a file database shared by the API and sidecar. It is disabled
+for `DB_PATH=:memory:`. `make monitor` builds only the monitor. `make sidecar`,
+`make dev`, `make run`, and `make build` build both sidecars. To inspect its JSON
+output separately, run:
+
+```sh
+bin/bot-monitor -database data/chat.db -interval 1s
+```
+
+Use one collector per database to avoid duplicate sample events.
 
 ## Chat protocol
 

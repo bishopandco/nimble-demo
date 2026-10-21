@@ -20,6 +20,7 @@ import (
 
 	"go-api/internal/bot"
 	"go-api/internal/model"
+	"go-api/internal/monitor"
 	"go-api/internal/store"
 )
 
@@ -53,6 +54,7 @@ type socketHub struct {
 	botWG       sync.WaitGroup
 	botClientID uint64
 	pendingBots map[int64]struct{}
+	monitor     *monitor.Service
 }
 
 type socketClient struct {
@@ -267,14 +269,21 @@ func (h *socketHub) chat(ctx context.Context, client *socketClient, name, text s
 		h.botError(client, saved.ID, "Bot is disabled on this server.")
 		return
 	}
-	job := botJob{request: request, promptID: saved.ID, sender: client}
-	select {
-	case h.botQueue <- job:
-		h.pendingBots[saved.ID] = struct{}{}
-		h.broadcast(SocketMessage{Type: "bot_status", ID: saved.ID, State: "thinking", Message: "Bot is thinking…", Timestamp: time.Now().UTC()})
-	default:
+	if len(h.botQueue) == cap(h.botQueue) {
 		h.botError(client, saved.ID, "Bot queue is full. Please try again shortly.")
+		return
 	}
+	if h.monitor != nil {
+		if err := h.monitor.Queue(ctx, saved.ID, request.Provider); err != nil {
+			h.logger.Error("register monitored bot call", "prompt_id", saved.ID, "error", err)
+			h.botError(client, saved.ID, "Bot call could not be registered. Please try again.")
+			return
+		}
+	}
+	// Producers hold mu, so only the worker can reduce this queue's length.
+	h.botQueue <- botJob{request: request, promptID: saved.ID, sender: client}
+	h.pendingBots[saved.ID] = struct{}{}
+	h.broadcast(SocketMessage{Type: "bot_status", ID: saved.ID, State: "thinking", Message: "Bot is thinking…", Timestamp: time.Now().UTC()})
 }
 
 // broadcast requires mu. All chat messages use this one shared room.

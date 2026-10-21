@@ -19,7 +19,12 @@ type Server struct {
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) { s.handler.ServeHTTP(w, r) }
 
 // Close disconnects WebSocket clients and waits for their handlers to finish.
-func (s *Server) Close() { s.sockets.close() }
+func (s *Server) Close() {
+	s.sockets.close()
+	if s.sockets.monitor != nil {
+		s.sockets.monitor.Close()
+	}
+}
 
 // New restores chat history and builds an HTTP handler. Close it before the store.
 func New(ctx context.Context, db *store.Store, logger *slog.Logger, options ...Option) (*Server, error) {
@@ -33,6 +38,14 @@ func New(ctx context.Context, db *store.Store, logger *slog.Logger, options ...O
 	}
 	for _, option := range options {
 		option(sockets)
+	}
+	if sockets.monitor != nil {
+		sockets.monitor.Start(ctx)
+		mux.Handle("GET /ws/monitor", sockets.monitor)
+	} else {
+		mux.HandleFunc("GET /ws/monitor", func(w http.ResponseWriter, r *http.Request) {
+			writeError(w, http.StatusServiceUnavailable, "bot monitor is disabled")
+		})
 	}
 	if sockets.bot != nil {
 		sockets.startBot(ctx)

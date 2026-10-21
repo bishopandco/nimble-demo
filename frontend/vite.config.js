@@ -5,7 +5,7 @@ import { svelteTesting } from '@testing-library/svelte/vite'
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'API_')
   const proxy = {
-    '^/ws$': {
+    '^/ws(?:/monitor)?$': {
       target: process.env.API_TARGET || env.API_TARGET || 'http://127.0.0.1:8080',
       ws: true,
       // Keep Host and Origin aligned for the API's existing origin check.
