@@ -101,8 +101,9 @@ func (h *socketHub) runBot(ctx context.Context, job botJob) {
 		if errors.Is(err, context.DeadlineExceeded) {
 			message = "Bot request timed out. Please try again."
 		}
-		h.botError(job.sender, message)
+		h.botError(job.sender, job.promptID, message)
 	}
+	delete(h.pendingBots, job.promptID)
 	h.broadcast(SocketMessage{Type: "bot_status", ID: job.promptID, State: state, Timestamp: time.Now().UTC()})
 }
 
@@ -116,6 +117,6 @@ func (h *socketHub) publishChat(saved model.ChatMessage) {
 	h.broadcast(message)
 }
 
-func (h *socketHub) botError(client *socketClient, message string) {
-	h.enqueue(client, SocketMessage{Type: "error", Message: message, Timestamp: time.Now().UTC()})
+func (h *socketHub) botError(client *socketClient, promptID int64, message string) {
+	h.enqueue(client, SocketMessage{Type: "error", ReplyTo: promptID, Message: message, Timestamp: time.Now().UTC()})
 }

@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,6 +52,7 @@ type socketHub struct {
 	botCancel   context.CancelFunc
 	botWG       sync.WaitGroup
 	botClientID uint64
+	pendingBots map[int64]struct{}
 }
 
 type socketClient struct {
@@ -67,7 +69,7 @@ func newSocketHub(ctx context.Context, db *store.Store, logger *slog.Logger) (*s
 	if err != nil {
 		return nil, err
 	}
-	hub := &socketHub{clients: make(map[*socketClient]struct{}), store: db, logger: logger.With("component", "websocket")}
+	hub := &socketHub{clients: make(map[*socketClient]struct{}), pendingBots: make(map[int64]struct{}), store: db, logger: logger.With("component", "websocket")}
 	for _, message := range saved {
 		hub.history = append(hub.history, message.SocketMessage())
 	}
@@ -130,7 +132,12 @@ func (h *socketHub) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Queue ready before registration so history precedes every live message.
-	client.send <- SocketMessage{Type: "ready", ClientID: client.id, Timestamp: time.Now().UTC(), History: append([]SocketMessage(nil), h.history...)}
+	pending := make([]int64, 0, len(h.pendingBots))
+	for id := range h.pendingBots {
+		pending = append(pending, id)
+	}
+	slices.Sort(pending)
+	client.send <- SocketMessage{Type: "ready", ClientID: client.id, Timestamp: time.Now().UTC(), History: append([]SocketMessage(nil), h.history...), PendingBotIDs: pending}
 	h.clients[client] = struct{}{}
 	h.wg.Add(1)
 	h.mu.Unlock()
@@ -253,19 +260,20 @@ func (h *socketHub) chat(ctx context.Context, client *socketClient, name, text s
 		return
 	}
 	if err != nil {
-		h.botError(client, err.Error())
+		h.botError(client, saved.ID, err.Error())
 		return
 	}
 	if h.bot == nil {
-		h.botError(client, "Bot is disabled on this server.")
+		h.botError(client, saved.ID, "Bot is disabled on this server.")
 		return
 	}
 	job := botJob{request: request, promptID: saved.ID, sender: client}
 	select {
 	case h.botQueue <- job:
-		h.broadcast(SocketMessage{Type: "bot_status", ID: saved.ID, State: "queued", Timestamp: time.Now().UTC()})
+		h.pendingBots[saved.ID] = struct{}{}
+		h.broadcast(SocketMessage{Type: "bot_status", ID: saved.ID, State: "thinking", Message: "Bot is thinking…", Timestamp: time.Now().UTC()})
 	default:
-		h.botError(client, "Bot queue is full. Please try again shortly.")
+		h.botError(client, saved.ID, "Bot queue is full. Please try again shortly.")
 	}
 }
 

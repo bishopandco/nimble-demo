@@ -9,7 +9,7 @@ function chatEntry(payload) {
       !Number.isSafeInteger(payload.client_id) || payload.client_id <= 0) return null
   const date = new Date(payload.timestamp)
   if (Number.isNaN(date.getTime())) return null
-  return { id: payload.id, name: payload.name, text: payload.message, clientID: payload.client_id, date, provider: ['codex', 'claude'].includes(payload.provider) ? payload.provider : '' }
+  return { id: payload.id, name: payload.name, text: payload.message, clientID: payload.client_id, date, provider: ['codex', 'claude'].includes(payload.provider) ? payload.provider : '', replyTo: Number.isSafeInteger(payload.reply_to) ? payload.reply_to : 0 }
 }
 
 export function createChatSocket() {
@@ -36,7 +36,6 @@ export function createChatSocket() {
   function retry() {
     if (!enabled) return
     state.status = 'reconnecting'
-    state.botJobs = []
     state.retryDelay = Math.min(1000 * 2 ** Math.min(retries++, 4), 10_000)
     retryTimer = setTimeout(connect, state.retryDelay)
   }
@@ -76,20 +75,36 @@ export function createChatSocket() {
       try { payload = JSON.parse(data) } catch { return }
       if (payload?.type === 'ready') {
         state.clientID = payload.client_id || 0
-        state.botJobs = []
         // Replace the list with the shared snapshot after every connection.
-        state.messages = (Array.isArray(payload.history) ? payload.history : [])
+        const history = (Array.isArray(payload.history) ? payload.history : [])
           .map(chatEntry).filter(Boolean).slice(-MESSAGE_LIMIT)
+        const pending = Array.isArray(payload.pending_bot_ids)
+          ? [...new Set(payload.pending_bot_ids.filter((id) => Number.isSafeInteger(id) && id > 0))] : []
+        const completed = new Set(history.filter((entry) => entry.provider).map((entry) => entry.replyTo))
+        if (state.botJobs.some((id) => !pending.includes(id) && !completed.has(id))) {
+          state.error = 'A bot request ended while disconnected. Its result is unavailable.'
+        }
+        state.messages = history
+        state.botJobs = pending
       } else if (payload?.type === 'chat') {
         const entry = chatEntry(payload)
         if (entry && !state.messages.some((item) => item.id === entry.id)) {
           state.messages = [...state.messages, entry].slice(-MESSAGE_LIMIT)
         }
-      } else if (payload?.type === 'bot_status' && Number.isSafeInteger(payload.id)) {
-        state.botJobs = state.botJobs.filter((id) => id !== payload.id)
-        if (payload.state === 'queued' || payload.state === 'running') state.botJobs = [...state.botJobs, payload.id]
+        if (entry?.provider && entry.replyTo > 0) {
+          state.botJobs = state.botJobs.filter((id) => id !== entry.replyTo)
+        }
+      } else if (payload?.type === 'bot_status' && Number.isSafeInteger(payload.id) && payload.id > 0) {
+        if (['thinking', 'queued', 'running'].includes(payload.state)) {
+          if (!state.botJobs.includes(payload.id)) state.botJobs = [...state.botJobs, payload.id]
+        } else if (payload.state === 'done' || payload.state === 'failed') {
+          state.botJobs = state.botJobs.filter((id) => id !== payload.id)
+        }
       } else if (payload?.type === 'error') {
         state.error = typeof payload.message === 'string' ? payload.message : 'The message was rejected.'
+        if (Number.isSafeInteger(payload.reply_to)) {
+          state.botJobs = state.botJobs.filter((id) => id !== payload.reply_to)
+        }
       }
     }
     connection.onerror = () => {
@@ -108,7 +123,6 @@ export function createChatSocket() {
     retries = 0
     state.retryDelay = 0
     state.status = 'disconnected'
-    state.botJobs = []
     state.error = ''
   }
 

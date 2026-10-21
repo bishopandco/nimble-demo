@@ -70,7 +70,7 @@ func TestBotRepliesAreSharedPersistedAndDoNotBlockChat(t *testing.T) {
 		t.Fatal("prompt not shared")
 	}
 	for _, conn := range []*websocket.Conn{first, second} {
-		receiveBotStatus(t, conn, "queued")
+		receiveBotStatus(t, conn, "thinking")
 		receiveBotStatus(t, conn, "running")
 	}
 	select {
@@ -145,7 +145,7 @@ func TestBotErrorsAndTimeoutArePrivate(t *testing.T) {
 			sendChat(t, sender, "Ada", "/bot claude Hello")
 			for _, conn := range []*websocket.Conn{sender, observer} {
 				receiveSocket(t, conn)
-				receiveBotStatus(t, conn, "queued")
+				receiveBotStatus(t, conn, "thinking")
 				receiveBotStatus(t, conn, "running")
 			}
 			if message := receiveSocket(t, sender); message.Type != "error" || message.Message == "" {
@@ -178,13 +178,13 @@ func TestBotQueueIsBoundedAndCanceledOnShutdown(t *testing.T) {
 	conn, _ := connectChat(t, server)
 	sendChat(t, conn, "Ada", "/bot first")
 	receiveSocket(t, conn)
-	receiveBotStatus(t, conn, "queued")
+	receiveBotStatus(t, conn, "thinking")
 	receiveBotStatus(t, conn, "running")
 	<-started
 	for range 8 {
 		sendChat(t, conn, "Ada", "/bot queued")
 		receiveSocket(t, conn)
-		receiveBotStatus(t, conn, "queued")
+		receiveBotStatus(t, conn, "thinking")
 	}
 	sendChat(t, conn, "Ada", "/bot overflow")
 	receiveSocket(t, conn)
@@ -236,7 +236,7 @@ func TestRealSidecarBinaryThroughChat(t *testing.T) {
 	conn, _ := connectChat(t, server)
 	sendChat(t, conn, "Ada", "/bot codex Hello")
 	receiveSocket(t, conn)
-	receiveBotStatus(t, conn, "queued")
+	receiveBotStatus(t, conn, "thinking")
 	receiveBotStatus(t, conn, "running")
 	if reply := receiveSocket(t, conn); reply.Provider != "codex" || reply.Message != "Real sidecar integration reply" {
 		t.Fatalf("sidecar not integrated: %+v", reply)

@@ -48,7 +48,8 @@ The same message appears in both tabs. Enter sends; Shift+Enter adds a new line.
 Messages allow up to 500 Unicode characters; names allow up to 40.
 
 Use `/bot <prompt>`, `/bot codex <prompt>`, or `/bot claude <prompt>` to ask the
-host CLI. A working indicator appears while requests are pending. Bot replies
+host CLI. A thinking indicator appears immediately after the server accepts a
+prompt. It stays active until a reply or error and is restored on reconnect. Bot replies
 are labeled `bot`, broadcast to the room, and saved alongside their prompt IDs.
 Long replies appear as several messages. Provider errors appear only to the sender.
 See the root README for CLI installation, login, and sidecar configuration.

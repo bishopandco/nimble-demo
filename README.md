@@ -80,7 +80,8 @@ missing executable or authentication failure produces a private error in chat.
 It does not switch providers after a failed run.
 
 Calls run one at a time, with space for eight queued prompts. Normal chat and
-heartbeat handling continue during a call. The room sees a working indicator;
+heartbeat handling continue during a call. Accepted prompts immediately emit a
+`thinking` status. The room keeps its thinking indicator until a reply or error;
 every connected client receives the completed reply. Replies are committed to
 SQLite before broadcast. Long replies are split into 500-character messages,
 with all parts saved atomically. Output is capped at 16,000 Unicode characters,
@@ -90,7 +91,11 @@ Bot messages carry `provider` and `reply_to` fields. `reply_to` is the persisted
 prompt message ID. `chat_bot_messages` stores this metadata. Bot output is never
 parsed as another command. Bot errors are private, and host stderr is not sent
 into the room. Queue status events use `type: "bot_status"`, the prompt ID, and a
-`state` of `queued`, `running`, `done`, or `failed`; they are not stored as chat.
+`state` of `thinking`, `running`, `done`, or `failed`; they are not stored as chat.
+A `ready` event includes `pending_bot_ids` when work is pending, so reconnecting
+clients restore the indicator. Bot errors include `reply_to` to identify the prompt.
+Unknown status values do not clear pending requests. If work ended while a client
+was offline and no reply is in its history, the UI reports an unavailable result.
 
 Codex runs with a read-only sandbox and unattended approval policy. Claude runs
 with built-in tools disabled, no MCP servers, and no interactive permissions.

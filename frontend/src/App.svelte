@@ -102,7 +102,7 @@
           {/if}
         </div>
         <div class="composer-area">
-          {#if connection.botJobs.length}<p class="bot-activity" aria-live="polite">Bot is working…{#if connection.botJobs.length > 1} ({connection.botJobs.length} requests){/if}</p>{/if}
+          {#if connection.botJobs.length}<p class="bot-activity" role="status" aria-live="polite" aria-atomic="true">Bot is thinking…{#if connection.botJobs.length > 1} ({connection.botJobs.length} requests){/if}</p>{/if}
           {#if connection.error}<p class="chat-error" role="alert"><MeasuredText text={connection.error} /></p>{/if}
           <form class="composer" onsubmit={submit}>
             <label class="sr-only" for="chat-message">Message</label>

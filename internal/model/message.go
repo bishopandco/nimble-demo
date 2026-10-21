@@ -29,16 +29,17 @@ type SocketInput struct {
 
 // SocketMessage is the outbound event envelope. Only chat events are persisted.
 type SocketMessage struct {
-	Type      string          `json:"type"`
-	ID        int64           `json:"id,omitempty"`
-	Timestamp time.Time       `json:"timestamp"`
-	Message   string          `json:"message,omitempty"`
-	Name      string          `json:"name,omitempty"`
-	ClientID  uint64          `json:"client_id,omitempty"`
-	History   []SocketMessage `json:"history,omitempty"`
-	Provider  string          `json:"provider,omitempty"`
-	ReplyTo   int64           `json:"reply_to,omitempty"`
-	State     string          `json:"state,omitempty"`
+	Type          string          `json:"type"`
+	ID            int64           `json:"id,omitempty"`
+	Timestamp     time.Time       `json:"timestamp"`
+	Message       string          `json:"message,omitempty"`
+	Name          string          `json:"name,omitempty"`
+	ClientID      uint64          `json:"client_id,omitempty"`
+	History       []SocketMessage `json:"history,omitempty"`
+	Provider      string          `json:"provider,omitempty"`
+	ReplyTo       int64           `json:"reply_to,omitempty"`
+	State         string          `json:"state,omitempty"`
+	PendingBotIDs []int64         `json:"pending_bot_ids,omitempty"`
 }
 
 func (m ChatMessage) SocketMessage() SocketMessage {
