@@ -144,11 +144,12 @@ header. HTTP errors use `{"error":"message"}`.
 ## Bot monitor
 
 The second sidecar, `bin/bot-monitor`, samples bot call process trees. The API
-starts and supervises it automatically. Open **Bot monitor** beneath the chat to
-connect the frontend to `/ws/monitor`. Chat and monitoring use separate sockets.
+starts and supervises it automatically. **Bot monitor** opens beneath the chat
+by default and connects to `/ws/monitor`. Chat and monitoring use separate sockets.
 
-The panel shows the latest 50 calls, prioritizing active calls, and 100 recent
-events. Each call includes its prompt ID, requested or resolved provider, state,
+The panel shows the latest 50 calls, prioritizing active calls, and two recent
+events. Completed calls display ✅. Each call includes its prompt ID, requested
+or resolved provider, state,
 sidecar PID, provider PID, runtime, memory, and CPU. Queued calls have no runtime
 until they start. The frontend updates elapsed time between snapshots.
 

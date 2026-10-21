@@ -8,8 +8,8 @@
   let events = $state([])
   let error = $state('')
   let now = $state(Date.now())
-  const states = { queued: 'Queued', running: 'Running', completed: 'Completed', failed: 'Failed', canceled: 'Canceled', interrupted: 'Interrupted' }
-  const eventNames = { queued: 'Queued', started: 'Started', process_started: 'Process started', sample: 'Sample', completed: 'Completed', failed: 'Failed', canceled: 'Canceled', interrupted: 'Interrupted' }
+  const states = { queued: 'Queued', running: 'Running', completed: '✅ Completed', failed: 'Failed', canceled: 'Canceled', interrupted: 'Interrupted' }
+  const eventNames = { queued: 'Queued', started: 'Started', process_started: 'Process started', sample: 'Sample', completed: '✅ Completed', failed: 'Failed', canceled: 'Canceled', interrupted: 'Interrupted' }
   const memory = (value) => typeof value === 'number' ? `${(value / 1048576).toFixed(1)} MB` : '—'
   const cpu = (value) => typeof value === 'number' ? `${value.toFixed(1)}%` : '—'
   const timestamp = (value) => new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
@@ -104,7 +104,7 @@
     <p>No events recorded yet.</p>
   {:else}
     <ol class="monitor-events" aria-label="Bot event history">
-      {#each events as event (event.id)}
+      {#each events.slice(0, 2) as event (event.id)}
         <li>
           <div><span>#{event.call_id} · {eventNames[event.kind] || event.kind}</span><time datetime={event.timestamp}>{timestamp(event.timestamp)}</time></div>
           {#if event.kind === 'sample'}<p>{memory(event.call.memory_bytes)} · {cpu(event.call.cpu_percent)} · {event.call.process_count} processes</p>{/if}

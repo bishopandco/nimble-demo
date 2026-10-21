@@ -60,9 +60,9 @@ tilde code fences. Provider errors replace the sender's pending message; other
 participants see a generic failure message.
 See the root README for CLI installation, login, and sidecar configuration.
 
-Expand **Bot monitor** below the chat to open a separate `/ws/monitor` connection.
+**Bot monitor** opens by default below the chat with a separate `/ws/monitor` connection.
 Its table shows bot call instances, sidecar and CLI PIDs, runtime, memory, and CPU.
-Recent lifecycle events and resource samples appear beneath the table. History
+The two latest events appear beneath the table. Completed calls display ✅. History
 comes from SQLite and reloads after reconnecting. Collapsing the panel closes its
 socket. Monitoring does not change the chat socket or its thinking messages.
 

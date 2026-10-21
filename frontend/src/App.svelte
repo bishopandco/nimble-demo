@@ -14,7 +14,7 @@
   let conversation = $state(null)
   let composer = $state(null)
   let followLatest = $state(true)
-  let monitorOpen = $state(false)
+  let monitorOpen = $state(true)
   const labels = { connecting: 'Connecting', connected: 'Connected', reconnecting: 'Reconnecting', disconnected: 'Disconnected' }
   const guestName = $derived(connection.clientID ? `Guest ${connection.clientID}` : 'Guest')
   const draftLength = $derived(characterCount(draft))
@@ -122,7 +122,7 @@
         </div>
         <footer class="chat-footer"><p>The latest {MESSAGE_LIMIT} messages stay in this room.<br />Messages stay saved after the server restarts.</p></footer>
       </section>
-      <details class="monitor-panel" ontoggle={(event) => { monitorOpen = event.currentTarget.open }}>
+      <details class="monitor-panel" open={monitorOpen} ontoggle={(event) => { monitorOpen = event.currentTarget.open }}>
         <summary>Bot monitor</summary>
         {#if monitorOpen}<BotMonitor />{/if}
       </details>
