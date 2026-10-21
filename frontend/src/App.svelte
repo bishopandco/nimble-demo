@@ -81,9 +81,6 @@
 </script>
 
 <div class="shell">
-  <header class="topbar grid">
-    <div class="connection-status {connection.status}" role="status"><span class="status-dot" aria-hidden="true"></span>{labels[connection.status]}</div>
-  </header>
   <main>
     <div class="page-heading grid">
       <h1>Go API / Svelte Socket Demo</h1>
@@ -108,6 +105,7 @@
       <section class="chat-panel" aria-labelledby="chat-heading">
         <div class="chat-toolbar">
           <h2 id="chat-heading"><span class="channel-hash" aria-hidden="true">#</span>general</h2>
+          <div class="connection-status {connection.status}" role="status"><span class="status-dot" aria-hidden="true"></span>{labels[connection.status]}</div>
         </div>
         <div bind:this={conversation} class="conversation" role="log" aria-label="Chat messages" aria-live="polite" aria-relevant="additions text" onscroll={onScroll}>
           {#if thread.length === 0}
